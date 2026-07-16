@@ -1,0 +1,2 @@
+lipo -create ./iPhone/HwBluetoothSDK.framework/HwBluetoothSDK ./Simulator/HwBluetoothSDK.framework/HwBluetoothSDK -output ./iPhone/HwBluetoothSDK.framework/HwBluetoothSDK
+

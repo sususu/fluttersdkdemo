@@ -1,0 +1,6 @@
+framework module HwBluetoothSDK {
+  umbrella header "HwBluetoothSDK.h"
+  export *
+
+  module * { export * }
+}
