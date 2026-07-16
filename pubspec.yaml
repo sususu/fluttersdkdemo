@@ -10,8 +10,6 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
-  blesdk:
-    path: ../plugins/blesdk
   permission_handler: ^12.0.1
 
 dev_dependencies:

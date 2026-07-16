@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
-import 'package:blesdk/blesdk.dart';
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:sdkdemo/bound_device_store.dart';
+import 'package:sdkdemo/pages/bind_flow_sheet.dart';
+import 'package:sdkdemo/pages/scan_connect_page.dart';
+import 'package:sdkdemo/pages/unbind_flow_sheet.dart';
+import 'package:sdkdemo/sdk/sdk.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,10 +36,7 @@ class SdkDemoApp extends StatelessWidget {
 
 enum DevicePhase {
   idle,
-  scanning,
-  connecting,
   connected,
-  binding,
   bound,
   syncing,
   unbinding,
@@ -49,18 +50,22 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final _sdk = Blesdk.instance;
-  final List<BleDevice> _devices = [];
+  final _sdk = HwBleSdk.instance;
   final List<String> _logs = [];
 
   DevicePhase _phase = DevicePhase.idle;
   String _status = '未初始化';
   String? _sdkVersion;
-  BleDevice? _selected;
-  BleDevice? _bound;
+  BleDevice? _device;
+  bool _bound = false;
   String _syncSummary = '';
   StreamSubscription<BleConnectionEvent>? _connSub;
   bool _busy = false;
+
+  /// 用户主动点「断开连接」后为 true，此时不自动重连。
+  bool _manualDisconnect = false;
+  bool _reconnecting = false;
+  Timer? _reconnectTimer;
 
   @override
   void initState() {
@@ -70,21 +75,58 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _reconnectTimer?.cancel();
     _connSub?.cancel();
     super.dispose();
   }
 
   Future<void> _bootstrap() async {
+    const maxMtu = 247;
     try {
-      await _sdk.init(maxMtu: 247);
+      await _sdk.init(maxMtu: maxMtu);
       final ver = await _sdk.getVersion();
       _connSub = _sdk.connectionEvents().listen(_onConnectionEvent);
 
-      setState(() {
-        _sdkVersion = ver;
-        _status = 'SDK 就绪';
-      });
-      _log('初始化成功，版本 $ver');
+      final initLog = Platform.isAndroid
+          ? '初始化成功，版本 $ver，mtu=$maxMtu'
+          : '初始化成功，版本 $ver';
+
+      final saved = await BoundDeviceStore.load();
+      if (!mounted) return;
+
+      if (saved != null) {
+        setState(() {
+          _sdkVersion = ver;
+          _device = BleDevice(
+            name: saved.name,
+            macAddress: saved.macAddress,
+          );
+          _bound = true;
+          _phase = DevicePhase.bound;
+          _status = '已绑定 ${saved.name ?? saved.macAddress}（来自本地）';
+        });
+        _log(initLog);
+        _log('读取本地绑定: ${saved.macAddress}');
+        if (saved.deviceInfo != null) {
+          final info = saved.deviceInfo!;
+          _log(
+            '本地设备信息: type=${info.type}, fw=${info.firmwareVersion}, '
+            'proto=${info.protocolVersion}',
+          );
+        }
+        // 恢复 SDK 侧绑定标记，便于断连重连逻辑
+        try {
+          await _sdk.setBind(true);
+        } catch (_) {}
+        await _enableAutoReconnect(_device!);
+        await _tryReconnect(reason: '启动恢复');
+      } else {
+        setState(() {
+          _sdkVersion = ver;
+          _status = 'SDK 就绪';
+        });
+        _log(initLog);
+      }
     } catch (e) {
       setState(() => _status = '初始化失败: $e');
       _log('初始化失败: $e');
@@ -94,26 +136,100 @@ class _HomePageState extends State<HomePage> {
   void _onConnectionEvent(BleConnectionEvent event) {
     switch (event) {
       case BleConnectedEvent(:final deviceName, :final macAddress):
+        _reconnectTimer?.cancel();
+        _reconnecting = false;
         setState(() {
           if (macAddress != null && macAddress.isNotEmpty) {
-            _selected = BleDevice(
-              name: deviceName,
-              macAddress: macAddress,
-            );
+            _device = BleDevice(name: deviceName, macAddress: macAddress);
           }
-          if (_phase != DevicePhase.binding && _phase != DevicePhase.bound) {
+          if (!_bound) {
             _phase = DevicePhase.connected;
+          } else {
+            _phase = DevicePhase.bound;
           }
           _status = '已连接 ${deviceName ?? macAddress ?? ''}';
         });
+        _log('连接事件: 已连接');
       case BleDisconnectedEvent():
         if (_phase == DevicePhase.unbinding) return;
         setState(() {
-          if (_phase != DevicePhase.bound && _phase != DevicePhase.idle) {
+          if (!_bound) {
             _phase = DevicePhase.idle;
+            _status = '已断开';
+          } else if (_manualDisconnect) {
+            _status = '已绑定（已手动断开）';
+          } else {
+            _status = '已绑定（连接断开，准备重连）';
           }
-          _status = '已断开';
         });
+        _log(
+          _manualDisconnect
+              ? '连接事件: 已手动断开'
+              : '连接事件: 意外断开',
+        );
+        if (_bound && !_manualDisconnect) {
+          _scheduleReconnect();
+        }
+    }
+  }
+
+  Future<void> _enableAutoReconnect(BleDevice device) async {
+    _manualDisconnect = false;
+    _log('已开启自动重连（${device.macAddress}）');
+  }
+
+  Future<void> _disableAutoReconnect() async {
+    _reconnectTimer?.cancel();
+    _reconnecting = false;
+    _log('已停止自动重连');
+  }
+
+  void _scheduleReconnect({Duration delay = const Duration(seconds: 2)}) {
+    if (!_bound || _manualDisconnect || _device == null) return;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(delay, () {
+      _tryReconnect(reason: '断线重连');
+    });
+  }
+
+  Future<void> _tryReconnect({required String reason}) async {
+    final device = _device;
+    if (!_bound || _manualDisconnect || device == null) return;
+    if (_reconnecting) return;
+    if (_phase == DevicePhase.unbinding || _phase == DevicePhase.syncing) {
+      return;
+    }
+
+    try {
+      if (await _sdk.isConnected()) return;
+    } catch (_) {}
+
+    _reconnecting = true;
+    if (mounted) {
+      setState(() => _status = '重连中（$reason）…');
+    }
+    _log('开始重连: $reason → ${device.macAddress}');
+
+    try {
+      await _sdk.connect(
+        macAddress: device.macAddress.isNotEmpty ? device.macAddress : null,
+        bleName: device.name,
+        timeoutSeconds: 30,
+      );
+      if (!mounted) return;
+      setState(() {
+        _phase = DevicePhase.bound;
+        _status = '已重连 ${device.name ?? device.macAddress}';
+      });
+      _log('重连成功');
+    } catch (e) {
+      _log('重连失败: $e');
+      if (mounted && _bound && !_manualDisconnect) {
+        setState(() => _status = '重连失败，稍后重试');
+        _scheduleReconnect(delay: const Duration(seconds: 5));
+      }
+    } finally {
+      _reconnecting = false;
     }
   }
 
@@ -122,192 +238,80 @@ class _HomePageState extends State<HomePage> {
     final hh = now.hour.toString().padLeft(2, '0');
     final mm = now.minute.toString().padLeft(2, '0');
     final ss = now.second.toString().padLeft(2, '0');
-    final line = '$hh:$mm:$ss  $msg';
     if (!mounted) return;
     setState(() {
-      _logs.insert(0, line);
+      _logs.insert(0, '$hh:$mm:$ss  $msg');
       if (_logs.length > 80) _logs.removeLast();
     });
   }
 
-  Future<bool> _ensurePermissions() async {
-    final statuses = await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.locationWhenInUse,
-    ].request();
-    final ok = statuses.values.every(
-      (s) => s.isGranted || s.isLimited || s.isRestricted,
+  Future<void> _openScanPage() async {
+    if (_busy) return;
+    final result = await Navigator.of(context).push<BleDevice>(
+      MaterialPageRoute(builder: (_) => const ScanConnectPage()),
     );
-    if (!ok) {
-      _log('蓝牙/定位权限未授予');
-      setState(() => _status = '请授予蓝牙与定位权限');
-    }
-    return ok;
-  }
-
-  Future<void> _scan() async {
-    if (_busy) return;
-    if (!await _ensurePermissions()) return;
-
+    if (result == null || !mounted) return;
     setState(() {
-      _busy = true;
-      _devices.clear();
-      _phase = DevicePhase.scanning;
-      _status = '扫描中…';
-      _syncSummary = '';
+      _device = result;
+      _phase = _bound ? DevicePhase.bound : DevicePhase.connected;
+      _status = '已连接 ${result.name ?? result.macAddress}';
+      _manualDisconnect = false;
     });
-    _log('开始扫描');
-
-    try {
-      await for (final event in _sdk.scanDevices(timeoutMs: 10000)) {
-        if (!mounted) return;
-        switch (event) {
-          case BleScanStarted(:final success):
-            setState(() {
-              _status = success ? '扫描中…' : '扫描启动失败';
-            });
-          case BleScanResult(:final device):
-            setState(() {
-              final i = _devices.indexWhere(
-                (d) => d.macAddress == device.macAddress,
-              );
-              if (i >= 0) {
-                _devices[i] = device;
-              } else {
-                _devices.add(device);
-              }
-              _devices.sort((a, b) => (b.rssi ?? -999).compareTo(a.rssi ?? -999));
-            });
-          case BleScanFinished(:final devices):
-            setState(() {
-              _devices
-                ..clear()
-                ..addAll(devices);
-              _devices.sort(
-                (a, b) => (b.rssi ?? -999).compareTo(a.rssi ?? -999),
-              );
-              _phase = DevicePhase.idle;
-              _status = '扫描结束，共 ${devices.length} 台';
-            });
-            _log('扫描结束: ${devices.length} 台设备');
-        }
-      }
-    } catch (e) {
-      setState(() {
-        _phase = DevicePhase.idle;
-        _status = '扫描失败: $e';
-      });
-      _log('扫描失败: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _stopScan() async {
-    try {
-      await _sdk.stopScan();
-      setState(() {
-        _phase = DevicePhase.idle;
-        _status = '已停止扫描';
-        _busy = false;
-      });
-    } catch (e) {
-      _log('停止扫描失败: $e');
-    }
-  }
-
-  Future<void> _connect(BleDevice device) async {
-    if (_busy) return;
-    if (!await _ensurePermissions()) return;
-
-    setState(() {
-      _busy = true;
-      _selected = device;
-      _phase = DevicePhase.connecting;
-      _status = '连接 ${device.name ?? device.macAddress}…';
-    });
-    _log('连接 ${device.macAddress}');
-
-    try {
-      await _sdk.stopScan();
-      final connected = await _sdk.connect(
-        macAddress: device.macAddress.isNotEmpty ? device.macAddress : null,
-        bleName: device.name,
-        timeoutSeconds: 30,
-      );
-      setState(() {
-        _selected = connected;
-        _phase = DevicePhase.connected;
-        _status = '已连接 ${connected.name ?? connected.macAddress}';
-      });
-      _log('连接成功');
-    } catch (e) {
-      setState(() {
-        _phase = DevicePhase.idle;
-        _status = '连接失败: $e';
-      });
-      _log('连接失败: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
+    _log('连接成功: ${result.macAddress}');
+    if (_bound) {
+      await _enableAutoReconnect(result);
     }
   }
 
   Future<void> _bind() async {
     if (_busy) return;
-    final device = _selected;
-    if (device == null) {
-      setState(() => _status = '请先连接设备');
+    if (_device == null || !await _sdk.isConnected()) {
+      setState(() => _status = '请先扫描并连接设备');
       return;
     }
 
-    setState(() {
-      _busy = true;
-      _phase = DevicePhase.binding;
-      _status = '绑定中，请在手表上确认…';
-    });
-    _log('开始绑定');
+    setState(() => _busy = true);
+    _log('打开绑定流程');
 
-    try {
-      final connected = await _sdk.isConnected();
-      if (!connected) {
-        await _connect(device);
+    if (!mounted) return;
+    final result = await showBindFlowSheet(context);
+    if (!mounted) return;
+
+    if (result != null) {
+      final device = _device;
+      if (device != null) {
+        await BoundDeviceStore.save(
+          macAddress: device.macAddress,
+          name: device.name,
+          deviceInfo: result.deviceInfo,
+        );
+        _log('已保存绑定信息到本地: ${device.macAddress}');
+        if (result.deviceInfo != null) {
+          final info = result.deviceInfo!;
+          _log(
+            '设备信息: type=${info.type}, fw=${info.firmwareVersion}, '
+            'proto=${info.protocolVersion}, bat=${info.battery}',
+          );
+        }
       }
-
-      await _sdk.startBind(BleBindType.normal);
-      _log('startBind 成功，同步环境信息');
-
-      await _sdk.setDeviceTime(
-        time: DateTime.now(),
-        use24HourFormat: true,
-      );
-      await _sdk.setUserInfo(
-        const BleUserInfo(
-          gender: BleGender.male,
-          age: 28,
-          height: 175,
-          weight: 700,
-        ),
-      );
-      await _sdk.setUnit(BleUnit.metric);
-      await _sdk.setLanguage(0); // 简体中文（以 SDK 枚举为准）
-      await _sdk.endBind();
-      await _sdk.setBind(true);
-
+      if (!mounted) return;
       setState(() {
-        _bound = device;
+        _bound = true;
         _phase = DevicePhase.bound;
         _status = '绑定成功';
+        _busy = false;
       });
       _log('绑定完成');
-    } catch (e) {
+      if (_device != null) {
+        await _enableAutoReconnect(_device!);
+      }
+    } else {
       setState(() {
         _phase = DevicePhase.connected;
-        _status = '绑定失败: $e';
+        _status = '绑定未完成';
+        _busy = false;
       });
-      _log('绑定失败: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      _log('绑定未完成');
     }
   }
 
@@ -323,9 +327,9 @@ class _HomePageState extends State<HomePage> {
 
     try {
       if (!await _sdk.isConnected()) {
-        final target = _bound ?? _selected;
+        final target = _device;
         if (target == null) {
-          throw Exception('没有可同步的设备，请先绑定或连接');
+          throw Exception('没有可同步的设备，请先连接并绑定');
         }
         await _sdk.connect(
           macAddress: target.macAddress.isNotEmpty ? target.macAddress : null,
@@ -346,7 +350,6 @@ class _HomePageState extends State<HomePage> {
           '心率 ${heartrates.length} 条\n'
           '睡眠 ${sleeps.length} 条';
 
-      // 同步入库后删除设备端缓存，避免重复拉取
       if (activities.isNotEmpty) {
         try {
           await _sdk.deleteSports();
@@ -364,14 +367,14 @@ class _HomePageState extends State<HomePage> {
       }
 
       setState(() {
-        _phase = DevicePhase.bound;
+        _phase = _bound ? DevicePhase.bound : DevicePhase.connected;
         _status = '同步完成';
         _syncSummary = summary;
       });
-      _log('同步完成: $summary'.replaceAll('\n', ' / '));
+      _log('同步完成: ${summary.replaceAll('\n', ' / ')}');
     } catch (e) {
       setState(() {
-        _phase = _bound != null ? DevicePhase.bound : DevicePhase.connected;
+        _phase = _bound ? DevicePhase.bound : DevicePhase.connected;
         _status = '同步失败: $e';
       });
       _log('同步失败: $e');
@@ -382,61 +385,58 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _unbind() async {
     if (_busy) return;
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('解绑手表'),
-        content: const Text('将清除手表数据并断开连接，确定继续？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('解绑'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
+    if (!_bound) {
+      setState(() => _status = '当前未绑定设备');
+      return;
+    }
 
     setState(() {
       _busy = true;
       _phase = DevicePhase.unbinding;
       _status = '解绑中…';
     });
-    _log('开始解绑');
+    _log('打开解绑流程');
+    await _disableAutoReconnect();
 
-    try {
-      await _sdk.unbind();
+    if (!mounted) return;
+    final ok = await showUnbindFlowSheet(context);
+    if (!mounted) return;
 
+    if (ok == true) {
+      _log('已清除本地绑定信息');
+      if (!mounted) return;
       setState(() {
-        _bound = null;
-        _selected = null;
+        _bound = false;
+        _device = null;
         _phase = DevicePhase.idle;
         _status = '已解绑';
         _syncSummary = '';
+        _busy = false;
       });
       _log('解绑完成');
-    } catch (e) {
+    } else {
       setState(() {
         _phase = DevicePhase.bound;
-        _status = '解绑失败: $e';
+        _status = ok == false ? '解绑未完成' : '已取消解绑';
+        _busy = false;
       });
-      _log('解绑失败: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      _log('解绑未完成');
+      if (_device != null) {
+        await _enableAutoReconnect(_device!);
+      }
     }
   }
 
   Future<void> _disconnect() async {
     try {
+      _manualDisconnect = true;
+      await _disableAutoReconnect();
       await _sdk.disconnect();
       setState(() {
-        _phase = _bound != null ? DevicePhase.bound : DevicePhase.idle;
-        _status = '已断开连接';
+        _phase = _bound ? DevicePhase.bound : DevicePhase.idle;
+        _status = _bound ? '已绑定（已手动断开）' : '已断开连接';
       });
+      _log('已手动断开连接（不会自动重连）');
     } catch (e) {
       _log('断开失败: $e');
     }
@@ -445,6 +445,10 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final canBind = !_busy && _device != null && !_bound;
+    final canSync = !_busy && (_bound || _phase == DevicePhase.connected);
+    final canUnbind = !_busy && _bound;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('手表 SDK Demo'),
@@ -453,10 +457,7 @@ class _HomePageState extends State<HomePage> {
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: Center(
-                child: Text(
-                  'v$_sdkVersion',
-                  style: theme.textTheme.labelMedium,
-                ),
+                child: Text('v$_sdkVersion', style: theme.textTheme.labelMedium),
               ),
             ),
         ],
@@ -464,58 +465,59 @@ class _HomePageState extends State<HomePage> {
       body: Column(
         children: [
           _StatusBanner(status: _status, phase: _phase, busy: _busy),
-          if (_bound != null || _selected != null)
-            _CurrentDeviceCard(
-              device: _selected ?? _bound!,
-              bound: _bound != null,
-            ),
+          if (_device != null)
+            _CurrentDeviceCard(device: _device!, bound: _bound),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 FilledButton.icon(
-                  onPressed: _busy
-                      ? null
-                      : (_phase == DevicePhase.scanning ? _stopScan : _scan),
-                  icon: Icon(
-                    _phase == DevicePhase.scanning
-                        ? Icons.stop
-                        : Icons.bluetooth_searching,
-                  ),
-                  label: Text(_phase == DevicePhase.scanning ? '停止扫描' : '扫描设备'),
+                  onPressed: _busy ? null : _openScanPage,
+                  icon: const Icon(Icons.bluetooth_searching),
+                  label: const Text('扫描并连接设备'),
                 ),
-                FilledButton.tonalIcon(
-                  onPressed: _busy ||
-                          _selected == null ||
-                          _phase == DevicePhase.scanning
-                      ? null
-                      : _bind,
-                  icon: const Icon(Icons.link),
-                  label: const Text('绑定手表'),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: canBind ? _bind : null,
+                        icon: const Icon(Icons.link),
+                        label: const Text('绑定手表'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: canSync ? _sync : null,
+                        icon: const Icon(Icons.sync),
+                        label: const Text('同步数据'),
+                      ),
+                    ),
+                  ],
                 ),
-                FilledButton.tonalIcon(
-                  onPressed: _busy ||
-                          (_bound == null &&
-                              _phase != DevicePhase.connected &&
-                              _phase != DevicePhase.bound)
-                      ? null
-                      : _sync,
-                  icon: const Icon(Icons.sync),
-                  label: const Text('同步数据'),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: canUnbind ? _unbind : null,
+                        icon: const Icon(Icons.link_off),
+                        label: const Text('解绑手表'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextButton(
+                        onPressed: _busy || _device == null
+                            ? null
+                            : _disconnect,
+                        child: const Text('断开连接'),
+                      ),
+                    ),
+                  ],
                 ),
-                OutlinedButton.icon(
-                  onPressed: _busy || _bound == null ? null : _unbind,
-                  icon: const Icon(Icons.link_off),
-                  label: const Text('解绑手表'),
-                ),
-                if (_phase == DevicePhase.connected ||
-                    _phase == DevicePhase.bound)
-                  TextButton(
-                    onPressed: _busy ? null : _disconnect,
-                    child: const Text('断开连接'),
-                  ),
               ],
             ),
           ),
@@ -533,78 +535,24 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           const Divider(height: 1),
-          Expanded(
-            flex: 3,
-            child: _devices.isEmpty
-                ? Center(
-                    child: Text(
-                      _phase == DevicePhase.scanning ? '正在搜索附近设备…' : '点击「扫描设备」开始',
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: theme.colorScheme.outline,
-                      ),
-                    ),
-                  )
-                : ListView.separated(
-                    itemCount: _devices.length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final d = _devices[index];
-                      final selected =
-                          _selected?.macAddress == d.macAddress;
-                      return ListTile(
-                        selected: selected,
-                        leading: CircleAvatar(
-                          backgroundColor: selected
-                              ? theme.colorScheme.primaryContainer
-                              : theme.colorScheme.surfaceContainerHighest,
-                          child: Icon(
-                            Icons.watch,
-                            color: selected
-                                ? theme.colorScheme.onPrimaryContainer
-                                : theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        title: Text(
-                          (d.name == null || d.name!.isEmpty)
-                              ? '未知设备'
-                              : d.name!,
-                        ),
-                        subtitle: Text(
-                          '${d.macAddress}  ·  RSSI ${d.rssi ?? '-'}',
-                        ),
-                        trailing: FilledButton(
-                          onPressed: _busy ? null : () => _connect(d),
-                          child: const Text('连接'),
-                        ),
-                        onTap: _busy ? null : () => _connect(d),
-                      );
-                    },
-                  ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('日志', style: theme.textTheme.titleSmall),
+            ),
           ),
-          const Divider(height: 1),
           Expanded(
-            flex: 2,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                  child: Text('日志', style: theme.textTheme.titleSmall),
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _logs.length,
+              itemBuilder: (context, index) => Text(
+                _logs[index],
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontFamily: 'monospace',
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _logs.length,
-                    itemBuilder: (context, index) => Text(
-                      _logs[index],
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontFamily: 'monospace',
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ],
@@ -642,9 +590,7 @@ class _StatusBanner extends StatelessWidget {
             else
               Icon(_phaseIcon(phase), color: theme.colorScheme.primary),
             const SizedBox(width: 12),
-            Expanded(
-              child: Text(status, style: theme.textTheme.titleSmall),
-            ),
+            Expanded(child: Text(status, style: theme.textTheme.titleSmall)),
           ],
         ),
       ),
@@ -653,10 +599,7 @@ class _StatusBanner extends StatelessWidget {
 
   IconData _phaseIcon(DevicePhase phase) {
     return switch (phase) {
-      DevicePhase.scanning => Icons.bluetooth_searching,
-      DevicePhase.connecting => Icons.bluetooth_connected,
       DevicePhase.connected => Icons.bluetooth_connected,
-      DevicePhase.binding => Icons.link,
       DevicePhase.bound => Icons.verified,
       DevicePhase.syncing => Icons.sync,
       DevicePhase.unbinding => Icons.link_off,
@@ -697,20 +640,15 @@ class _CurrentDeviceCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    device.name?.isNotEmpty == true
-                        ? device.name!
-                        : '未知设备',
+                    device.name?.isNotEmpty == true ? device.name! : '未知设备',
                     style: theme.textTheme.titleSmall,
                   ),
-                  Text(
-                    device.macAddress,
-                    style: theme.textTheme.bodySmall,
-                  ),
+                  Text(device.macAddress, style: theme.textTheme.bodySmall),
                 ],
               ),
             ),
             Text(
-              bound ? '已绑定' : '已选中',
+              bound ? '已绑定' : '已连接',
               style: theme.textTheme.labelMedium?.copyWith(
                 color: bound
                     ? theme.colorScheme.primary

@@ -3,8 +3,7 @@ allprojects {
         google()
         mavenCentral()
         maven {
-            // sdkdemo/android -> ../../plugins/blesdk/android/localRepo
-            url = uri("${rootDir}/../../plugins/blesdk/android/localRepo")
+            url = uri("${rootDir}/localRepo")
         }
         maven {
             url = uri("https://nexus.huawo-wear.com/repository/maven-releases/")

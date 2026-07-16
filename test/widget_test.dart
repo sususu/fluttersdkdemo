@@ -6,6 +6,7 @@ void main() {
     await tester.pumpWidget(const SdkDemoApp());
     await tester.pump();
     expect(find.text('手表 SDK Demo'), findsOneWidget);
-    expect(find.text('扫描设备'), findsOneWidget);
+    expect(find.text('扫描并连接设备'), findsOneWidget);
+    expect(find.text('绑定手表'), findsOneWidget);
   });
 }

@@ -47,3 +47,16 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    val localAar = file("../localRepo/com/huawo/sdk/bluetoothsdk/2.5.4.126/bluetoothsdk-2.5.4.126.aar")
+    if (localAar.exists()) {
+        implementation("com.huawo.sdk:bluetoothsdk:2.5.4.126")
+    } else {
+        implementation("com.huawo.sdk:bluetoothsdk:2.5.4.126@aar")
+    }
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.lifecycle:lifecycle-process:2.9.2")
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("com.google.code.gson:gson:2.13.1")
+}

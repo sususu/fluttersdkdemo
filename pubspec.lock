@@ -9,13 +9,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.13.1"
-  blesdk:
-    dependency: "direct main"
-    description:
-      path: "../plugins/blesdk"
-      relative: true
-    source: path
-    version: "0.0.1"
   boolean_selector:
     dependency: transitive
     description:
