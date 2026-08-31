@@ -59,6 +59,12 @@ class _HomePageState extends State<HomePage> {
   BleDevice? _device;
   bool _bound = false;
   String _syncSummary = '';
+  List<BleActivity> _wlActivities = const [];
+  List<BleSleep> _wlSleeps = const [];
+  List<BleHeartrate> _wlHeartrates = const [];
+  List<BleSpo2> _wlSpo2s = const [];
+  List<BleStress> _wlStresses = const [];
+  List<BleHrv> _wlHrvs = const [];
   StreamSubscription<BleConnectionEvent>? _connSub;
   bool _busy = false;
 
@@ -383,6 +389,116 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// 杰理健康数据使用六个独立 V2 接口串行同步，单类失败不覆盖其它类别结果。
+  Future<void> _syncJLHealthData() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _phase = DevicePhase.syncing;
+      _status = '杰理健康数据同步中…';
+      _syncSummary = '';
+    });
+    _log('杰理健康数据同步入口');
+
+    try {
+      if (!await _sdk.isConnected()) {
+        final target = _device;
+        if (target == null) {
+          throw Exception('没有可同步的设备，请先连接并绑定');
+        }
+        _log('杰理同步检测到未连接，开始重连: ${target.macAddress}');
+        await _sdk.connect(
+          macAddress: target.macAddress.isNotEmpty ? target.macAddress : null,
+          bleName: target.name,
+        );
+        _log('杰理同步重连成功');
+      }
+
+      final errors = <String>[];
+
+      Future<List<T>?> load<T>(
+        String category,
+        Future<List<T>> Function() action,
+      ) async {
+        _log('杰理$category 开始读取');
+        try {
+          final data = await action();
+          _log('杰理$category 成功 count=${data.length}');
+          return data;
+        } catch (error) {
+          final context = error.toString();
+          errors.add('$category: $context');
+          _log('杰理$category 失败: $context');
+          return null;
+        }
+      }
+
+      final activities = await load<BleActivity>(
+        'STEP',
+        _sdk.getActivitiesV2,
+      );
+      if (activities != null) _wlActivities = activities;
+
+      final sleeps = await load<BleSleep>('SLEEP', _sdk.getSleepsV2);
+      if (sleeps != null) _wlSleeps = sleeps;
+
+      final heartrates = await load<BleHeartrate>(
+        'HEART_RATE',
+        _sdk.getHeartratesV2,
+      );
+      if (heartrates != null) _wlHeartrates = heartrates;
+
+      final spo2s = await load<BleSpo2>('SPO2', _sdk.getSpo2sV2);
+      if (spo2s != null) _wlSpo2s = spo2s;
+
+      final stresses = await load<BleStress>(
+        'STRESS',
+        _sdk.getStressesV2,
+      );
+      if (stresses != null) _wlStresses = stresses;
+
+      // final hrvs = await load<BleHrv>('HRV', _sdk.getHrvsV2);
+      // if (hrvs != null) _wlHrvs = hrvs;
+
+      final totalSteps = _wlActivities.fold<int>(
+        0,
+        (sum, item) => sum + item.step,
+      );
+      final summary = StringBuffer()
+        ..writeln('活动 ${_wlActivities.length} 条（步数合计 $totalSteps）')
+        ..writeln('睡眠 ${_wlSleeps.length} 条')
+        ..writeln('心率 ${_wlHeartrates.length} 条')
+        ..writeln('血氧 ${_wlSpo2s.length} 条')
+        ..writeln('压力 ${_wlStresses.length} 条');
+        //..write('HRV ${_wlHrvs.length} 条');
+      if (errors.isNotEmpty) {
+        summary
+          ..writeln()
+          ..write('失败：${errors.join('；')}');
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _phase = _bound ? DevicePhase.bound : DevicePhase.connected;
+        _status = errors.isEmpty ? '杰理同步完成' : '杰理同步部分完成';
+        _syncSummary = summary.toString();
+      });
+      _log(
+        '${errors.isEmpty ? '杰理同步完成' : '杰理同步部分完成'}: '
+        '${summary.toString().replaceAll('\n', ' / ')}',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _phase = _bound ? DevicePhase.bound : DevicePhase.connected;
+        _status = '杰理同步失败: $error';
+      });
+      _log('杰理同步失败: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _unbind() async {
     if (_busy) return;
     if (!_bound) {
@@ -462,7 +578,8 @@ class _HomePageState extends State<HomePage> {
             ),
         ],
       ),
-      body: Column(
+      // Keep the whole page scrollable when controls exceed a short screen.
+      body: ListView(
         children: [
           _StatusBanner(status: _status, phase: _phase, busy: _busy),
           if (_device != null)
@@ -495,6 +612,18 @@ class _HomePageState extends State<HomePage> {
                         label: const Text('同步数据'),
                       ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: canSync ? _syncJLHealthData : null,
+                        icon: const Icon(Icons.sync),
+                        label: const Text('同步数据（杰理）'),
+                      ),
+                    )
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -542,16 +671,16 @@ class _HomePageState extends State<HomePage> {
               child: Text('日志', style: theme.textTheme.titleSmall),
             ),
           ),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _logs.length,
-              itemBuilder: (context, index) => Text(
-                _logs[index],
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _logs.length,
+            itemBuilder: (context, index) => Text(
+              _logs[index],
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),

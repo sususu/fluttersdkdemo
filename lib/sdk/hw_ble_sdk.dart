@@ -9,7 +9,10 @@ import 'package:sdkdemo/sdk/models/ble_device.dart';
 import 'package:sdkdemo/sdk/models/ble_device_info.dart';
 import 'package:sdkdemo/sdk/models/ble_health_data_count.dart';
 import 'package:sdkdemo/sdk/models/ble_heartrate.dart';
+import 'package:sdkdemo/sdk/models/ble_hrv.dart';
 import 'package:sdkdemo/sdk/models/ble_sleep.dart';
+import 'package:sdkdemo/sdk/models/ble_spo2.dart';
+import 'package:sdkdemo/sdk/models/ble_stress.dart';
 import 'package:sdkdemo/sdk/models/ble_unit.dart';
 import 'package:sdkdemo/sdk/models/ble_user_info.dart';
 
@@ -203,6 +206,40 @@ class HwBleSdk {
   Future<List<BleSleep>> getSleeps() async {
     final list = await _method.invokeMethod<List<dynamic>>('getSleeps');
     return (list ?? []).map((e) => BleSleep.fromMap(e as Map)).toList();
+  }
+
+  Future<List<BleActivity>> getActivitiesV2() async {
+    final list = await _method.invokeMethod<List<dynamic>>('getActivitiesV2');
+    return (list ?? [])
+        .map((e) => BleActivity.fromMap(e as Map))
+        .toList();
+  }
+
+  Future<List<BleSleep>> getSleepsV2() async {
+    final list = await _method.invokeMethod<List<dynamic>>('getSleepsV2');
+    return (list ?? []).map((e) => BleSleep.fromMap(e as Map)).toList();
+  }
+
+  Future<List<BleHeartrate>> getHeartratesV2() async {
+    final list = await _method.invokeMethod<List<dynamic>>('getHeartratesV2');
+    return (list ?? [])
+        .map((e) => BleHeartrate.fromMap(e as Map))
+        .toList();
+  }
+
+  Future<List<BleSpo2>> getSpo2sV2() async {
+    final list = await _method.invokeMethod<List<dynamic>>('getSpo2sV2');
+    return (list ?? []).map((e) => BleSpo2.fromMap(e as Map)).toList();
+  }
+
+  Future<List<BleStress>> getStressesV2() async {
+    final list = await _method.invokeMethod<List<dynamic>>('getStressesV2');
+    return (list ?? []).map((e) => BleStress.fromMap(e as Map)).toList();
+  }
+
+  Future<List<BleHrv>> getHrvsV2() async {
+    final list = await _method.invokeMethod<List<dynamic>>('getHrvsV2');
+    return (list ?? []).map((e) => BleHrv.fromMap(e as Map)).toList();
   }
 
   Future<void> deleteSleeps() => _method.invokeMethod<void>('deleteSleeps');

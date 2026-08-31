@@ -3,6 +3,7 @@ package com.huawo.sdkdemo
 import android.app.Application
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.huawo.sdk.bluetoothsdk.BluetoothSDK
 import com.huawo.sdk.bluetoothsdk.callback.ConnectCallback
 import com.huawo.sdk.bluetoothsdk.callback.DisconnectCallback
@@ -15,18 +16,24 @@ import com.huawo.sdk.bluetoothsdk.interfaces.callback.ConnectionStateCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.CreateBondCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.DeviceInfoCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.HeartratesCallback
+import com.huawo.sdk.bluetoothsdk.interfaces.callback.HrvsCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.IntValueCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.RemoveBondCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.SleepsCallback
+import com.huawo.sdk.bluetoothsdk.interfaces.callback.Spo2Callback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.SportsCallback
+import com.huawo.sdk.bluetoothsdk.interfaces.callback.StressCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.GetActivityNum
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.GetSports
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.ActivityNum
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.DeviceInfo
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Gender
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Heartrate
+import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Hrv
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Sleep
+import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Spo2
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Sport
+import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Stress
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Unit
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.UserInfo
 import com.huawo.sdk.bluetoothsdk.interfaces.utils.LanguageUtils
@@ -65,6 +72,7 @@ class HwBleBridge private constructor(
         }
 
     companion object {
+        private const val TAG = "HwBleBridge"
         private const val METHOD_CHANNEL = "sdkdemo/hw_ble"
         private const val SCAN_CHANNEL = "sdkdemo/hw_ble/scan"
         private const val CONNECTION_CHANNEL = "sdkdemo/hw_ble/connection"
@@ -124,6 +132,12 @@ class HwBleBridge private constructor(
                 BluetoothSDK.delHeartrates(boolCallback(result, "deleteHeartrates failed"))
             "getSleeps" -> handleGetSleeps(result)
             "deleteSleeps" -> BluetoothSDK.delSleeps(boolCallback(result, "deleteSleeps failed"))
+            "getActivitiesV2" -> handleGetActivitiesV2(result)
+            "getSleepsV2" -> handleGetSleepsV2(result)
+            "getHeartratesV2" -> handleGetHeartratesV2(result)
+            "getSpo2sV2" -> handleGetSpo2sV2(result)
+            "getStressesV2" -> handleGetStressesV2(result)
+            "getHrvsV2" -> handleGetHrvsV2(result)
             else -> result.notImplemented()
         }
     }
@@ -193,6 +207,30 @@ class HwBleBridge private constructor(
 
     private fun postError(result: MethodChannel.Result, code: Int, msg: String) {
         mainHandler.post { result.error(code.toString(), msg, null) }
+    }
+
+    private fun logWlEnter(method: String) {
+        Log.i(TAG, "[WL_SYNC][ENTER] method=$method connected=${BluetoothSDK.isConnected()}")
+    }
+
+    private fun logWlSuccess(method: String, count: Int) {
+        Log.i(TAG, "[WL_SYNC][RESULT] method=$method success=true count=$count")
+    }
+
+    private fun postWlError(result: MethodChannel.Result, method: String, code: Int) {
+        Log.e(TAG, "[WL_SYNC][RESULT] method=$method success=false code=$code")
+        postError(result, code, "$method failed")
+    }
+
+    private fun postWlMappingError(
+        result: MethodChannel.Result,
+        method: String,
+        error: Exception,
+    ) {
+        Log.e(TAG, "[WL_SYNC][EXCEPTION] method=$method code=WL_MAP_ERROR", error)
+        mainHandler.post {
+            result.error("WL_MAP_ERROR", "$method mapping failed", error.message)
+        }
     }
 
     private fun voidCallback(result: MethodChannel.Result, msg: String) =
@@ -362,6 +400,128 @@ class HwBleBridge private constructor(
             },
         )
 
+    private fun handleGetActivitiesV2(result: MethodChannel.Result) {
+        val method = "getActivitiesV2"
+        logWlEnter(method)
+        BluetoothSDK.getStepV2(
+            object : SportsCallback() {
+                override fun onSuccess(list: List<Sport>?) {
+                    try {
+                        val mapped = list?.map { activityMap(it) } ?: emptyList()
+                        logWlSuccess(method, mapped.size)
+                        postSuccess(result, mapped)
+                    } catch (error: Exception) {
+                        postWlMappingError(result, method, error)
+                    }
+                }
+
+                override fun onFail(code: Int) = postWlError(result, method, code)
+            },
+        )
+    }
+
+    private fun handleGetSleepsV2(result: MethodChannel.Result) {
+        val method = "getSleepsV2"
+        logWlEnter(method)
+        BluetoothSDK.getSleepV2(
+            object : SleepsCallback() {
+                override fun onSuccess(list: List<Sleep>?) {
+                    try {
+                        val mapped =
+                            list?.mapIndexed { index, sleep -> sleepMap(index, sleep) }
+                                ?: emptyList()
+                        logWlSuccess(method, mapped.size)
+                        postSuccess(result, mapped)
+                    } catch (error: Exception) {
+                        postWlMappingError(result, method, error)
+                    }
+                }
+
+                override fun onFail(code: Int) = postWlError(result, method, code)
+            },
+        )
+    }
+
+    private fun handleGetHeartratesV2(result: MethodChannel.Result) {
+        val method = "getHeartratesV2"
+        logWlEnter(method)
+        BluetoothSDK.getHeartRateV2(
+            object : HeartratesCallback() {
+                override fun onSuccess(list: List<Heartrate>?) {
+                    try {
+                        val mapped = list?.map { heartrateMap(it) } ?: emptyList()
+                        logWlSuccess(method, mapped.size)
+                        postSuccess(result, mapped)
+                    } catch (error: Exception) {
+                        postWlMappingError(result, method, error)
+                    }
+                }
+
+                override fun onFail(code: Int) = postWlError(result, method, code)
+            },
+        )
+    }
+
+    private fun handleGetSpo2sV2(result: MethodChannel.Result) {
+        val method = "getSpo2sV2"
+        logWlEnter(method)
+        BluetoothSDK.getSpo2V2(
+            object : Spo2Callback() {
+                override fun onSuccess(list: List<Spo2>?) {
+                    try {
+                        val mapped = list?.map { spo2Map(it) } ?: emptyList()
+                        logWlSuccess(method, mapped.size)
+                        postSuccess(result, mapped)
+                    } catch (error: Exception) {
+                        postWlMappingError(result, method, error)
+                    }
+                }
+
+                override fun onFail(code: Int) = postWlError(result, method, code)
+            },
+        )
+    }
+
+    private fun handleGetStressesV2(result: MethodChannel.Result) {
+        val method = "getStressesV2"
+        logWlEnter(method)
+        BluetoothSDK.getStressV2(
+            object : StressCallback() {
+                override fun onSuccess(list: List<Stress>?) {
+                    try {
+                        val mapped = list?.map { stressMap(it) } ?: emptyList()
+                        logWlSuccess(method, mapped.size)
+                        postSuccess(result, mapped)
+                    } catch (error: Exception) {
+                        postWlMappingError(result, method, error)
+                    }
+                }
+
+                override fun onFail(code: Int) = postWlError(result, method, code)
+            },
+        )
+    }
+
+    private fun handleGetHrvsV2(result: MethodChannel.Result) {
+        val method = "getHrvsV2"
+        logWlEnter(method)
+//        BluetoothSDK.getHrvV2(
+//            object : HrvsCallback() {
+//                override fun onSuccess(list: List<Hrv>?) {
+//                    try {
+//                        val mapped = list?.map { hrvMap(it) } ?: emptyList()
+//                        logWlSuccess(method, mapped.size)
+//                        postSuccess(result, mapped)
+//                    } catch (error: Exception) {
+//                        postWlMappingError(result, method, error)
+//                    }
+//                }
+//
+//                override fun onFail(code: Int) = postWlError(result, method, code)
+//            },
+//        )
+    }
+
     private fun startScan(timeoutMs: Long) {
         if (!initialized) {
             emitScanError("NOT_INITIALIZED", "Call init() before scanDevices()")
@@ -520,6 +680,27 @@ class HwBleBridge private constructor(
             "light" to sleep.lightDuration,
             "awake" to sleep.awakeDuration,
             "rem" to sleep.remDuration,
+        )
+
+    private fun spo2Map(spo2: Spo2): Map<String, Any?> =
+        mapOf(
+            "index" to spo2.index,
+            "timeMs" to spo2.time,
+            "spo2" to spo2.spo2,
+        )
+
+    private fun stressMap(stress: Stress): Map<String, Any?> =
+        mapOf(
+            "index" to stress.index,
+            "timeMs" to stress.time,
+            "stress" to stress.stress,
+        )
+
+    private fun hrvMap(hrv: Hrv): Map<String, Any?> =
+        mapOf(
+            "index" to hrv.index,
+            "timeMs" to hrv.time,
+            "fatigue" to hrv.fatigue,
         )
 
     private fun toInt(value: Any?, defaultValue: Int = 0): Int =
