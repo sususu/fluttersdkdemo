@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:sdkdemo/sdk/sdk.dart';
 
@@ -18,16 +20,19 @@ class _ScanConnectPageState extends State<ScanConnectPage> {
   String _status = '点击下方开始扫描';
 
   Future<bool> _ensurePermissions() async {
-    final statuses = await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.locationWhenInUse,
-    ].request();
+    final permissions = Platform.isIOS
+        ? <Permission>[Permission.bluetooth]
+        : <Permission>[
+            Permission.bluetoothScan,
+            Permission.bluetoothConnect,
+            Permission.locationWhenInUse,
+          ];
+    final statuses = await permissions.request();
     final ok = statuses.values.every(
       (s) => s.isGranted || s.isLimited || s.isRestricted,
     );
     if (!ok && mounted) {
-      setState(() => _status = '请授予蓝牙与定位权限');
+      setState(() => _status = Platform.isIOS ? '请授予蓝牙权限' : '请授予蓝牙与定位权限');
     }
     return ok;
   }
@@ -164,9 +169,7 @@ class _ScanConnectPageState extends State<ScanConnectPage> {
             child: SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: _connecting
-                    ? null
-                    : (_scanning ? _stopScan : _scan),
+                onPressed: _connecting ? null : (_scanning ? _stopScan : _scan),
                 icon: Icon(_scanning ? Icons.stop : Icons.bluetooth_searching),
                 label: Text(_scanning ? '停止扫描' : '开始扫描'),
               ),
@@ -206,8 +209,7 @@ class _ScanConnectPageState extends State<ScanConnectPage> {
                           '${d.macAddress}  ·  RSSI ${d.rssi ?? '-'}',
                         ),
                         trailing: FilledButton(
-                          onPressed:
-                              _connecting ? null : () => _connect(d),
+                          onPressed: _connecting ? null : () => _connect(d),
                           child: const Text('连接'),
                         ),
                         onTap: _connecting ? null : () => _connect(d),

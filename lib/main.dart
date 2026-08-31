@@ -34,13 +34,7 @@ class SdkDemoApp extends StatelessWidget {
   }
 }
 
-enum DevicePhase {
-  idle,
-  connected,
-  bound,
-  syncing,
-  unbinding,
-}
+enum DevicePhase { idle, connected, bound, syncing, unbinding }
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -103,10 +97,7 @@ class _HomePageState extends State<HomePage> {
       if (saved != null) {
         setState(() {
           _sdkVersion = ver;
-          _device = BleDevice(
-            name: saved.name,
-            macAddress: saved.macAddress,
-          );
+          _device = BleDevice(name: saved.name, macAddress: saved.macAddress);
           _bound = true;
           _phase = DevicePhase.bound;
           _status = '已绑定 ${saved.name ?? saved.macAddress}（来自本地）';
@@ -168,11 +159,7 @@ class _HomePageState extends State<HomePage> {
             _status = '已绑定（连接断开，准备重连）';
           }
         });
-        _log(
-          _manualDisconnect
-              ? '连接事件: 已手动断开'
-              : '连接事件: 意外断开',
-        );
+        _log(_manualDisconnect ? '连接事件: 已手动断开' : '连接事件: 意外断开');
         if (_bound && !_manualDisconnect) {
           _scheduleReconnect();
         }
@@ -573,7 +560,10 @@ class _HomePageState extends State<HomePage> {
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: Center(
-                child: Text('v$_sdkVersion', style: theme.textTheme.labelMedium),
+                child: Text(
+                  'v$_sdkVersion',
+                  style: theme.textTheme.labelMedium,
+                ),
               ),
             ),
         ],
