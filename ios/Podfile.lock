@@ -1,0 +1,21 @@
+PODS:
+  - Flutter (1.0.0)
+  - HwBluetoothSDK (3.2.10)
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - HwBluetoothSDK (from `.`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  HwBluetoothSDK:
+    :path: "."
+
+SPEC CHECKSUMS:
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  HwBluetoothSDK: 8aa5baa6ca76160670713d8c927b1f7af10ad5a3
+
+PODFILE CHECKSUM: 39b00ab20c020238661a823c4466074d907beee4
+
+COCOAPODS: 1.16.2
