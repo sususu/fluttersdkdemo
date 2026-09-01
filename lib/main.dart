@@ -444,8 +444,8 @@ class _HomePageState extends State<HomePage> {
       );
       if (stresses != null) _wlStresses = stresses;
 
-      // final hrvs = await load<BleHrv>('HRV', _sdk.getHrvsV2);
-      // if (hrvs != null) _wlHrvs = hrvs;
+      final hrvs = await load<BleHrv>('HRV', _sdk.getHrvsV2);
+      if (hrvs != null) _wlHrvs = hrvs;
 
       final totalSteps = _wlActivities.fold<int>(
         0,
@@ -456,8 +456,8 @@ class _HomePageState extends State<HomePage> {
         ..writeln('睡眠 ${_wlSleeps.length} 条')
         ..writeln('心率 ${_wlHeartrates.length} 条')
         ..writeln('血氧 ${_wlSpo2s.length} 条')
-        ..writeln('压力 ${_wlStresses.length} 条');
-        //..write('HRV ${_wlHrvs.length} 条');
+        ..writeln('压力 ${_wlStresses.length} 条')
+        ..write('HRV ${_wlHrvs.length} 条');
       if (errors.isNotEmpty) {
         summary
           ..writeln()

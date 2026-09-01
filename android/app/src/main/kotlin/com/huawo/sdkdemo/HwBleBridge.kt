@@ -505,21 +505,21 @@ class HwBleBridge private constructor(
     private fun handleGetHrvsV2(result: MethodChannel.Result) {
         val method = "getHrvsV2"
         logWlEnter(method)
-//        BluetoothSDK.getHrvV2(
-//            object : HrvsCallback() {
-//                override fun onSuccess(list: List<Hrv>?) {
-//                    try {
-//                        val mapped = list?.map { hrvMap(it) } ?: emptyList()
-//                        logWlSuccess(method, mapped.size)
-//                        postSuccess(result, mapped)
-//                    } catch (error: Exception) {
-//                        postWlMappingError(result, method, error)
-//                    }
-//                }
-//
-//                override fun onFail(code: Int) = postWlError(result, method, code)
-//            },
-//        )
+        BluetoothSDK.getHrvV2(
+            object : HrvsCallback() {
+                override fun onSuccess(list: List<Hrv>?) {
+                    try {
+                        val mapped = list?.map { hrvMap(it) } ?: emptyList()
+                        logWlSuccess(method, mapped.size)
+                        postSuccess(result, mapped)
+                    } catch (error: Exception) {
+                        postWlMappingError(result, method, error)
+                    }
+                }
+
+                override fun onFail(code: Int) = postWlError(result, method, code)
+            },
+        )
     }
 
     private fun startScan(timeoutMs: Long) {

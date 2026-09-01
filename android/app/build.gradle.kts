@@ -49,11 +49,11 @@ flutter {
 }
 
 dependencies {
-    val localAar = file("../localRepo/com/huawo/sdk/bluetoothsdk/2.5.4.126/bluetoothsdk-2.5.4.126.aar")
+    val localAar = file("../localRepo/com/huawo/sdk/bluetoothsdk/2.5.4.128/bluetoothsdk-2.5.4.128.aar")
     if (localAar.exists()) {
-        implementation("com.huawo.sdk:bluetoothsdk:2.5.4.126")
+        implementation("com.huawo.sdk:bluetoothsdk:2.5.4.128")
     } else {
-        implementation("com.huawo.sdk:bluetoothsdk:2.5.4.126@aar")
+        implementation("com.huawo.sdk:bluetoothsdk:2.5.4.128@aar")
     }
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.lifecycle:lifecycle-process:2.9.2")
