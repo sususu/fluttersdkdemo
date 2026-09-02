@@ -7,6 +7,8 @@ export 'models/ble_device.dart';
 export 'models/ble_device_info.dart';
 export 'models/ble_gender.dart';
 export 'models/ble_health_data_count.dart';
+export 'models/ble_goal.dart';
+export 'models/ble_goal_type.dart';
 export 'models/ble_heartrate.dart';
 export 'models/ble_hrv.dart';
 export 'models/ble_sleep.dart';

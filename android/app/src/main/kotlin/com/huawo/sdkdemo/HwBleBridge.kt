@@ -16,6 +16,7 @@ import com.huawo.sdk.bluetoothsdk.interfaces.callback.ConnectionStateCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.CreateBondCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.DeviceInfoCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.HeartratesCallback
+import com.huawo.sdk.bluetoothsdk.interfaces.callback.GoalCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.HrvsCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.IntValueCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.RemoveBondCallback
@@ -27,6 +28,8 @@ import com.huawo.sdk.bluetoothsdk.interfaces.ops.GetActivityNum
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.GetSports
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.ActivityNum
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.DeviceInfo
+import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Goal
+import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.GoalType
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Gender
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Heartrate
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Hrv
@@ -125,6 +128,8 @@ class HwBleBridge private constructor(
             "getDeviceInfo" -> handleGetDeviceInfo(result)
             "getBindState" -> handleGetBindState(result)
             "getHealthDataCount" -> handleGetHealthDataCount(result)
+            "getGoals" -> handleGetGoals(result)
+            "setGoal" -> handleSetGoal(call, result)
             "getActivities" -> handleGetActivities(call, result)
             "deleteSports" -> BluetoothSDK.delSports(boolCallback(result, "deleteSports failed"))
             "getHeartrates" -> handleGetHeartrates(result)
@@ -331,6 +336,74 @@ class HwBleBridge private constructor(
     private fun handleGetBindState(result: MethodChannel.Result) =
         BluetoothSDK.getBindState(intCallback(result, "getBindState failed"))
 
+    private fun handleSetGoal(call: MethodCall, result: MethodChannel.Result) {
+        val method = "setGoal"
+        val typeValue = toInt(call.argument<Any>("type"), -1)
+        val value = toInt(call.argument<Any>("value"), -1)
+
+        if (!BluetoothSDK.isConnected()) {
+            Log.e(TAG, "[GOALS][RESULT] method=$method success=false code=13 reason=disconnected")
+            postError(result, 13, "$method failed: device disconnected")
+            return
+        }
+        val goalType = GoalType.valueOf(typeValue)
+        BluetoothSDK.setGoal(
+            goalType,
+            value,
+            object : BoolCallback() {
+                override fun onSuccess() {
+                    Log.i(TAG, "[GOALS][RESULT] method=$method success=true type=$goalType value=$value")
+                    postSuccess(result)
+                }
+
+                override fun onFail(code: Int) {
+                    Log.e(TAG, "[GOALS][RESULT] method=$method success=false code=$code type=$goalType value=$value")
+                    postError(result, code, "$method failed: type=$typeValue value=$value")
+                }
+            },
+        )
+    }
+    private fun handleGetGoals(result: MethodChannel.Result) {
+        val method = "getGoals"
+        val connected = BluetoothSDK.isConnected()
+        if (!connected) {
+            Log.e(TAG, "[GOALS][RESULT] method=$method success=false code=13 reason=disconnected")
+            postError(result, 13, "$method failed: device disconnected")
+            return
+        }
+        BluetoothSDK.getGoals(
+            object : GoalCallback() {
+                override fun onSuccess(goal: Goal?) {
+                    if (goal == null) {
+                        Log.e(TAG, "[GOALS][RESULT] method=$method success=false code=GOALS_EMPTY")
+                        mainHandler.post {
+                            result.error("GOALS_EMPTY", "$method returned empty result", null)
+                        }
+                        return
+                    }
+                    try {
+                        val mapped = goalMap(goal)
+                        Log.i(
+                            TAG,
+                            "[GOALS][RESULT] method=$method success=true " +
+                                "step=${goal.step} calorie=${goal.calorie} distance=${goal.distance} " +
+                                "sleep=${goal.sleep} duration=${goal.duration} " +
+                                "otDistance=${goal.otDistance} otDistanceMile=${goal.otDistanceMile}",
+                        )
+                        postSuccess(result, mapped)
+                    } catch (error: Exception) {
+                        Log.e(TAG, "[GOALS][EXCEPTION] method=$method code=1000", error)
+                        postError(result, 1000, "$method mapping failed: ${error.message}")
+                    }
+                }
+
+                override fun onFail(code: Int) {
+                    Log.e(TAG, "[GOALS][RESULT] method=$method success=false code=$code")
+                    postError(result, code, "$method failed")
+                }
+            },
+        )
+    }
     private fun handleGetHealthDataCount(result: MethodChannel.Result) {
         BluetoothSDK.addDataTask(
             GetActivityNum(
@@ -653,6 +726,16 @@ class HwBleBridge private constructor(
         return map
     }
 
+    private fun goalMap(goal: Goal): Map<String, Any?> =
+        mapOf(
+            "step" to goal.step,
+            "calorie" to goal.calorie,
+            "distance" to goal.distance,
+            "sleep" to goal.sleep,
+            "duration" to goal.duration,
+            "otDistance" to goal.otDistance,
+            "otDistanceMile" to goal.otDistanceMile,
+        )
     private fun activityMap(sport: Sport): Map<String, Any?> =
         mapOf(
             "index" to sport.index,

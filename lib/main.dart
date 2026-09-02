@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:sdkdemo/bound_device_store.dart';
 import 'package:sdkdemo/pages/bind_flow_sheet.dart';
+import 'package:sdkdemo/pages/goals_page.dart';
 import 'package:sdkdemo/pages/scan_connect_page.dart';
 import 'package:sdkdemo/pages/unbind_flow_sheet.dart';
 import 'package:sdkdemo/sdk/sdk.dart';
@@ -633,6 +634,31 @@ class _HomePageState extends State<HomePage> {
                             ? null
                             : _disconnect,
                         child: const Text('断开连接'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text('设备功能'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: () {
+                          Navigator.of(context).push<void>(
+                            MaterialPageRoute(builder: (_) => const GoalsPage()),
+                          );
+                        },
+                        icon: const Icon(Icons.data_object_rounded),
+                        label: const Text('目标设置'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed:_sync,
+                        icon: const Icon(Icons.notification_add_outlined),
+                        label: const Text('闹钟与提醒'),
                       ),
                     ),
                   ],

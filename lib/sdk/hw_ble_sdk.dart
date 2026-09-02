@@ -8,6 +8,8 @@ import 'package:sdkdemo/sdk/models/ble_bind_state.dart';
 import 'package:sdkdemo/sdk/models/ble_device.dart';
 import 'package:sdkdemo/sdk/models/ble_device_info.dart';
 import 'package:sdkdemo/sdk/models/ble_health_data_count.dart';
+import 'package:sdkdemo/sdk/models/ble_goal.dart';
+import 'package:sdkdemo/sdk/models/ble_goal_type.dart';
 import 'package:sdkdemo/sdk/models/ble_heartrate.dart';
 import 'package:sdkdemo/sdk/models/ble_hrv.dart';
 import 'package:sdkdemo/sdk/models/ble_sleep.dart';
@@ -182,6 +184,16 @@ class HwBleSdk {
     return BleHealthDataCount.fromMap(map ?? {});
   }
 
+  Future<void> setGoal(BleGoalType type, int value) =>
+      _method.invokeMethod<void>('setGoal', {'type': type.value, 'value': value});
+
+  Future<BleGoal> getGoals() async {
+    final map = await _method.invokeMethod<Map<dynamic, dynamic>>('getGoals');
+    if (map == null) {
+      throw StateError('getGoals returned empty result');
+    }
+    return BleGoal.fromMap(map);
+  }
   Future<List<BleActivity>> getActivities(int activityCount) async {
     final list = await _method.invokeMethod<List<dynamic>>('getActivities', {
       'activityCount': activityCount,
