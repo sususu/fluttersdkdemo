@@ -204,6 +204,17 @@ class HwBleSdk {
   Future<void> addDemoAlarm() =>
       _method.invokeMethod<void>('addDemoAlarm');
 
+  Future<int> addJlDemoAlarm() async {
+    final alarmId = await _method.invokeMethod<int>('addJlDemoAlarm');
+    if (alarmId == null) {
+      throw StateError('addJlDemoAlarm returned empty alarm ID');
+    }
+    return alarmId;
+  }
+
+  Future<void> deleteAllAlarms() =>
+      _method.invokeMethod<void>('deleteAllAlarms');
+
   Future<List<BleActivity>> getActivities(int activityCount) async {
     final list = await _method.invokeMethod<List<dynamic>>('getActivities', {
       'activityCount': activityCount,

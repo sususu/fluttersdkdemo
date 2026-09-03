@@ -83,6 +83,9 @@ class HwBleBridge private constructor(
         private const val METHOD_CHANNEL = "sdkdemo/hw_ble"
         private const val SCAN_CHANNEL = "sdkdemo/hw_ble/scan"
         private const val CONNECTION_CHANNEL = "sdkdemo/hw_ble/connection"
+        private const val JL_ALARM_MIN_ID = 1
+        private const val JL_ALARM_MAX_ID = 5
+        private const val JL_ALARM_SNOOZE_MINUTES = 10
 
         fun register(activity: FlutterActivity, flutterEngine: FlutterEngine) {
             HwBleBridge(
@@ -135,6 +138,8 @@ class HwBleBridge private constructor(
             "getGoals" -> handleGetGoals(result)
             "getAlarms" -> handleGetAlarms(result)
             "addDemoAlarm" -> handleAddDemoAlarm(result)
+            "addJlDemoAlarm" -> handleAddJlDemoAlarm(result)
+            "deleteAllAlarms" -> handleDeleteAllAlarms(result)
             "setGoal" -> handleSetGoal(call, result)
             "getActivities" -> handleGetActivities(call, result)
             "deleteSports" -> BluetoothSDK.delSports(boolCallback(result, "deleteSports failed"))
@@ -467,6 +472,126 @@ class HwBleBridge private constructor(
             Log.i(TAG, "[ALARMS][BRANCH] method=$method api=BluetoothSDK.addAlarm repeat=workdays")
             BluetoothSDK.addAlarm(
                 alarm,
+                object : BoolCallback() {
+                    override fun onSuccess() {
+                        Log.i(TAG, "[ALARMS][RESULT] method=$method success=true")
+                        postSuccess(result)
+                    }
+
+                    override fun onFail(code: Int) {
+                        Log.e(TAG, "[ALARMS][RESULT] method=$method success=false code=$code")
+                        postError(result, code, "$method failed")
+                    }
+                },
+            )
+        } catch (error: Exception) {
+            Log.e(TAG, "[ALARMS][EXCEPTION] method=$method code=1000", error)
+            postError(result, 1000, "$method failed: ${error.message}")
+        }
+    }
+
+    private fun handleAddJlDemoAlarm(result: MethodChannel.Result) {
+        val method = "addJlDemoAlarm"
+        val connected = BluetoothSDK.isConnected()
+        if (!connected) {
+            Log.e(TAG, "[ALARMS][RESULT] method=$method success=false code=13 reason=disconnected")
+            postError(result, 13, "$method failed: device disconnected")
+            return
+        }
+
+        // JIELI alarm IDs are selected by the app from the device's current alarm list.
+        BluetoothSDK.getAlarms(
+            object : AlarmsCallback() {
+                override fun onSuccess(list: List<Alarm>?) {
+                    try {
+                        val usedIds = list.orEmpty().map { it.id }.toSet()
+                        val alarmId =
+                            (JL_ALARM_MIN_ID..JL_ALARM_MAX_ID).firstOrNull { it !in usedIds }
+                        if (alarmId == null) {
+                            Log.e(
+                                TAG,
+                                "[ALARMS][RESULT] method=$method success=false " +
+                                    "code=JL_ALARM_ID_UNAVAILABLE usedIds=$usedIds",
+                            )
+                            mainHandler.post {
+                                result.error(
+                                    "JL_ALARM_ID_UNAVAILABLE",
+                                    "$method failed: no available alarm ID in " +
+                                        "$JL_ALARM_MIN_ID..$JL_ALARM_MAX_ID",
+                                    usedIds.toList(),
+                                )
+                            }
+                            return
+                        }
+
+                        Log.i(
+                            TAG,
+                            "[ALARMS][BRANCH] method=$method selectedId=$alarmId usedIds=$usedIds",
+                        )
+                        val alarm =
+                            Alarm().apply {
+                                id = alarmId
+                                isOn = true
+                                content = "起床"
+                                repeatPeriodUnit = RepeatPeriodUnit.Week
+                                setMonday(true)
+                                setTuesday(true)
+                                setWednesday(true)
+                                setThursday(true)
+                                setFriday(true)
+                                snooze = JL_ALARM_SNOOZE_MINUTES
+                                timePointList = listOf(TimePoint(7, 30))
+                            }
+                        BluetoothSDK.addAlarmV2(
+                            alarm,
+                            object : BoolCallback() {
+                                override fun onSuccess() {
+                                    Log.i(
+                                        TAG,
+                                        "[ALARMS][RESULT] method=$method success=true id=$alarmId",
+                                    )
+                                    postSuccess(result, alarmId)
+                                }
+
+                                override fun onFail(code: Int) {
+                                    Log.e(
+                                        TAG,
+                                        "[ALARMS][RESULT] method=$method success=false " +
+                                            "code=$code id=$alarmId",
+                                    )
+                                    postError(result, code, "$method failed: id=$alarmId")
+                                }
+                            },
+                        )
+                    } catch (error: Exception) {
+                        Log.e(TAG, "[ALARMS][EXCEPTION] method=$method code=1000", error)
+                        postError(result, 1000, "$method failed: ${error.message}")
+                    }
+                }
+
+                override fun onFail(code: Int) {
+                    Log.e(
+                        TAG,
+                        "[ALARMS][RESULT] method=$method success=false stage=getAlarms code=$code",
+                    )
+                    postError(result, code, "$method failed while reading alarms")
+                }
+            },
+        )
+    }
+
+    private fun handleDeleteAllAlarms(result: MethodChannel.Result) {
+        val method = "deleteAllAlarms"
+        val connected = BluetoothSDK.isConnected()
+        Log.i(TAG, "[ALARMS][ENTER] method=$method connected=$connected")
+        if (!connected) {
+            Log.e(TAG, "[ALARMS][RESULT] method=$method success=false code=13 reason=disconnected")
+            postError(result, 13, "$method failed: device disconnected")
+            return
+        }
+
+        try {
+            BluetoothSDK.delAllAlarms(
                 object : BoolCallback() {
                     override fun onSuccess() {
                         Log.i(TAG, "[ALARMS][RESULT] method=$method success=true")

@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../sdk/hw_ble_sdk.dart';
 import '../sdk/models/ble_alarm.dart';
@@ -110,6 +111,89 @@ class _AlarmsPagetate extends State<AlarmsPage> {
       }
     }
   }
+  Future<void> _addJLAlarm() async {
+    debugPrint('[ALARMS][ENTER] action=addJlDemoAlarm hour=7 minute=30');
+    setState(() {
+      _running = true;
+      _status = '正在添加杰理示例闹钟…';
+      _alarms = null;
+    });
+
+    try {
+      if (!await _sdk.isConnected()) {
+        throw StateError('设备未连接');
+      }
+      final alarmId = await _sdk.addJlDemoAlarm();
+      debugPrint(
+        '[ALARMS][RESULT] action=addJlDemoAlarm success=true id=$alarmId',
+      );
+      if (!mounted) return;
+      setState(() {
+        _status = '添加杰理示例闹钟完成 #$alarmId';
+      });
+    } on PlatformException catch (error) {
+      debugPrint(
+        '[ALARMS][RESULT] action=addJlDemoAlarm success=false '
+        'code=${error.code} message=${error.message} details=${error.details}',
+      );
+      if (!mounted) return;
+      setState(() {
+        _status = error.code == 'JL_ALARM_ID_UNAVAILABLE'
+            ? '杰理闹钟已达到最大数量（最多 5 个）'
+            : '添加杰理示例闹钟失败：[${error.code}] ${error.message ?? ''}';
+      });
+    } catch (error) {
+      debugPrint('[ALARMS][EXCEPTION] action=addJlDemoAlarm error=$error');
+      if (!mounted) return;
+      setState(() {
+        _status = '添加杰理示例闹钟失败：$error';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _running = false);
+      }
+    }
+  }
+
+  Future<void> _deleteAllAlarms() async {
+    debugPrint('[ALARMS][ENTER] action=deleteAllAlarms');
+    setState(() {
+      _running = true;
+      _status = '正在删除全部闹钟…';
+    });
+
+    try {
+      if (!await _sdk.isConnected()) {
+        throw StateError('设备未连接');
+      }
+      await _sdk.deleteAllAlarms();
+      debugPrint('[ALARMS][RESULT] action=deleteAllAlarms success=true');
+      if (!mounted) return;
+      setState(() {
+        _alarms = const [];
+        _status = '删除全部闹钟完成';
+      });
+    } on PlatformException catch (error) {
+      debugPrint(
+        '[ALARMS][RESULT] action=deleteAllAlarms success=false '
+        'code=${error.code} message=${error.message} details=${error.details}',
+      );
+      if (!mounted) return;
+      setState(() {
+        _status = '删除全部闹钟失败：[${error.code}] ${error.message ?? ''}';
+      });
+    } catch (error) {
+      debugPrint('[ALARMS][EXCEPTION] action=deleteAllAlarms error=$error');
+      if (!mounted) return;
+      setState(() {
+        _status = '删除全部闹钟失败：$error';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _running = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -159,12 +243,12 @@ class _AlarmsPagetate extends State<AlarmsPage> {
                       ),
                       const SizedBox(height: 8),
                       FilledButton.tonal(
-                        onPressed: () {},
+                        onPressed: _running ? null : _addJLAlarm,
                         child: const Text('添加示例闹钟（工作日 07:30）（杰理）'),
                       ),
                       const SizedBox(height: 8),
                       FilledButton.tonal(
-                        onPressed: () {},
+                        onPressed: _running ? null : _deleteAllAlarms,
                         child: const Text('删除全部闹钟'),
                       ),
                       const SizedBox(height: 8),
