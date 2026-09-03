@@ -10,6 +10,7 @@ import com.huawo.sdk.bluetoothsdk.callback.DisconnectCallback
 import com.huawo.sdk.bluetoothsdk.core.callback.ScanCallback
 import com.huawo.sdk.bluetoothsdk.core.model.Device
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.ActivityNumCallback
+import com.huawo.sdk.bluetoothsdk.interfaces.callback.AlarmsCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.BoolCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.BoolValueCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.callback.ConnectionStateCallback
@@ -27,16 +28,19 @@ import com.huawo.sdk.bluetoothsdk.interfaces.callback.StressCallback
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.GetActivityNum
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.GetSports
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.ActivityNum
+import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Alarm
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.DeviceInfo
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Goal
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.GoalType
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Gender
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Heartrate
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Hrv
+import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.RepeatPeriodUnit
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Sleep
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Spo2
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Sport
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Stress
+import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.TimePoint
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.Unit
 import com.huawo.sdk.bluetoothsdk.interfaces.ops.models.UserInfo
 import com.huawo.sdk.bluetoothsdk.interfaces.utils.LanguageUtils
@@ -129,6 +133,8 @@ class HwBleBridge private constructor(
             "getBindState" -> handleGetBindState(result)
             "getHealthDataCount" -> handleGetHealthDataCount(result)
             "getGoals" -> handleGetGoals(result)
+            "getAlarms" -> handleGetAlarms(result)
+            "addDemoAlarm" -> handleAddDemoAlarm(result)
             "setGoal" -> handleSetGoal(call, result)
             "getActivities" -> handleGetActivities(call, result)
             "deleteSports" -> BluetoothSDK.delSports(boolCallback(result, "deleteSports failed"))
@@ -404,6 +410,81 @@ class HwBleBridge private constructor(
             },
         )
     }
+
+    private fun handleGetAlarms(result: MethodChannel.Result) {
+        val method = "getAlarms"
+        val connected = BluetoothSDK.isConnected()
+        Log.i(TAG, "[ALARMS][ENTER] method=$method connected=$connected")
+        if (!connected) {
+            Log.e(TAG, "[ALARMS][RESULT] method=$method success=false code=13 reason=disconnected")
+            postError(result, 13, "$method failed: device disconnected")
+            return
+        }
+
+        BluetoothSDK.getAlarms(
+            object : AlarmsCallback() {
+                override fun onSuccess(list: List<Alarm>?) {
+                    try {
+                        val mapped = list?.map { alarmMap(it) } ?: emptyList()
+                        Log.i(TAG, "[ALARMS][RESULT] method=$method success=true count=${mapped.size}")
+                        postSuccess(result, mapped)
+                    } catch (error: Exception) {
+                        Log.e(TAG, "[ALARMS][EXCEPTION] method=$method code=1000", error)
+                        postError(result, 1000, "$method mapping failed: ${error.message}")
+                    }
+                }
+
+                override fun onFail(code: Int) {
+                    Log.e(TAG, "[ALARMS][RESULT] method=$method success=false code=$code")
+                    postError(result, code, "$method failed")
+                }
+            },
+        )
+    }
+
+    private fun handleAddDemoAlarm(result: MethodChannel.Result) {
+        val method = "addDemoAlarm"
+        val connected = BluetoothSDK.isConnected()
+        if (!connected) {
+            postError(result, 13, "$method failed: device disconnected")
+            return
+        }
+
+        try {
+            // Standard addAlarm owns ID allocation inside SDK; do not preselect an ID here.
+            val alarm =
+                Alarm().apply {
+                    isOn = true
+                    content = "起床"
+                    repeatPeriodUnit = RepeatPeriodUnit.Week
+                    setMonday(true)
+                    setTuesday(true)
+                    setWednesday(true)
+                    setThursday(true)
+                    setFriday(true)
+                    timePointList = listOf(TimePoint(7, 30))
+                }
+            Log.i(TAG, "[ALARMS][BRANCH] method=$method api=BluetoothSDK.addAlarm repeat=workdays")
+            BluetoothSDK.addAlarm(
+                alarm,
+                object : BoolCallback() {
+                    override fun onSuccess() {
+                        Log.i(TAG, "[ALARMS][RESULT] method=$method success=true")
+                        postSuccess(result)
+                    }
+
+                    override fun onFail(code: Int) {
+                        Log.e(TAG, "[ALARMS][RESULT] method=$method success=false code=$code")
+                        postError(result, code, "$method failed")
+                    }
+                },
+            )
+        } catch (error: Exception) {
+            Log.e(TAG, "[ALARMS][EXCEPTION] method=$method code=1000", error)
+            postError(result, 1000, "$method failed: ${error.message}")
+        }
+    }
+
     private fun handleGetHealthDataCount(result: MethodChannel.Result) {
         BluetoothSDK.addDataTask(
             GetActivityNum(
@@ -736,6 +817,21 @@ class HwBleBridge private constructor(
             "otDistance" to goal.otDistance,
             "otDistanceMile" to goal.otDistanceMile,
         )
+
+    private fun alarmMap(alarm: Alarm): Map<String, Any?> {
+        val time = alarm.firstTimePoint
+        return mapOf(
+            "id" to alarm.id,
+            "hour" to time?.hour,
+            "minute" to time?.minute,
+            "isOn" to alarm.isOn,
+            "content" to alarm.content,
+            "week" to alarm.week,
+            "weekDescription" to alarm.weekStringForDebug,
+            "snooze" to alarm.snooze,
+        )
+    }
+
     private fun activityMap(sport: Sport): Map<String, Any?> =
         mapOf(
             "index" to sport.index,

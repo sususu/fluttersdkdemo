@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:sdkdemo/sdk/hw_ble_events.dart';
 import 'package:sdkdemo/sdk/models/bind_type.dart';
 import 'package:sdkdemo/sdk/models/ble_activity.dart';
+import 'package:sdkdemo/sdk/models/ble_alarm.dart';
 import 'package:sdkdemo/sdk/models/ble_bind_state.dart';
 import 'package:sdkdemo/sdk/models/ble_device.dart';
 import 'package:sdkdemo/sdk/models/ble_device_info.dart';
@@ -194,6 +195,15 @@ class HwBleSdk {
     }
     return BleGoal.fromMap(map);
   }
+
+  Future<List<BleAlarm>> getAlarms() async {
+    final list = await _method.invokeMethod<List<dynamic>>('getAlarms');
+    return (list ?? []).map((e) => BleAlarm.fromMap(e as Map)).toList();
+  }
+
+  Future<void> addDemoAlarm() =>
+      _method.invokeMethod<void>('addDemoAlarm');
+
   Future<List<BleActivity>> getActivities(int activityCount) async {
     final list = await _method.invokeMethod<List<dynamic>>('getActivities', {
       'activityCount': activityCount,

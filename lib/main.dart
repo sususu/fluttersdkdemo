@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:sdkdemo/bound_device_store.dart';
+import 'package:sdkdemo/pages/alarms_page.dart';
 import 'package:sdkdemo/pages/bind_flow_sheet.dart';
 import 'package:sdkdemo/pages/goals_page.dart';
 import 'package:sdkdemo/pages/scan_connect_page.dart';
@@ -656,7 +657,11 @@ class _HomePageState extends State<HomePage> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: FilledButton.tonalIcon(
-                        onPressed:_sync,
+                        onPressed: () {
+                          Navigator.of(context).push<void>(
+                            MaterialPageRoute(builder: (_) => const AlarmsPage()),
+                          );
+                        },
                         icon: const Icon(Icons.notification_add_outlined),
                         label: const Text('闹钟与提醒'),
                       ),

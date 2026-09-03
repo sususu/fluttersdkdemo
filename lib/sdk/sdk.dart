@@ -2,6 +2,7 @@
 library;
 
 export 'models/ble_activity.dart';
+export 'models/ble_alarm.dart';
 export 'models/ble_bind_state.dart';
 export 'models/ble_device.dart';
 export 'models/ble_device_info.dart';
