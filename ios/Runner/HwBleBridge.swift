@@ -260,7 +260,8 @@ private final class HwBleBridgeImpl: NSObject {
         guard let devices = devices else { return }
         self.lastScanDevices = devices
         for device in devices {
-          let key = device.macAddress ?? device.uuid ?? device.name ?? UUID().uuidString
+          let key = [device.uuid, device.macAddress, device.name]
+            .compactMap { $0 }.first { !$0.isEmpty } ?? UUID().uuidString
           if self.seenScanKeys.contains(key) { continue }
           self.seenScanKeys.insert(key)
           self.scanEventSink?([
@@ -435,8 +436,8 @@ private final class HwBleBridgeImpl: NSObject {
     var map: [String: Any] = [
       "name": device.name as Any,
       "macAddress": device.macAddress ?? "",
+      "rssi": device.rssi?.intValue ?? 0,
     ]
-    if let rssi = device.rssi { map["rssi"] = rssi.intValue }
     if let uuid = device.uuid { map["uuid"] = uuid }
     return map
   }

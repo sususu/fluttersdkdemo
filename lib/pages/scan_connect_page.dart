@@ -56,7 +56,10 @@ class _ScanConnectPageState extends State<ScanConnectPage> {
           case BleScanResult(:final device):
             setState(() {
               final i = _devices.indexWhere(
-                (d) => d.macAddress == device.macAddress,
+                (d) => device.uuid?.isNotEmpty == true
+                    ? d.uuid == device.uuid
+                    : device.macAddress.isNotEmpty &&
+                          d.macAddress == device.macAddress,
               );
               if (i >= 0) {
                 _devices[i] = device;
@@ -67,16 +70,10 @@ class _ScanConnectPageState extends State<ScanConnectPage> {
                 (a, b) => (b.rssi ?? -999).compareTo(a.rssi ?? -999),
               );
             });
-          case BleScanFinished(:final devices):
+          case BleScanFinished():
             setState(() {
-              _devices
-                ..clear()
-                ..addAll(devices);
-              _devices.sort(
-                (a, b) => (b.rssi ?? -999).compareTo(a.rssi ?? -999),
-              );
               _scanning = false;
-              _status = '扫描结束，共 ${devices.length} 台';
+              _status = '扫描结束，共 ${_devices.length} 台';
             });
         }
       }
