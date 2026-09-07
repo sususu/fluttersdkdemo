@@ -1,4 +1,4 @@
-/// Common readback fields for sedentary and drink-water reminders.
+/// Common readback fields for sedentary, drink-water and handwashing reminders.
 class BleReminderConfig {
   BleReminderConfig.fromMap(Map<dynamic, dynamic> map)
     : isOn = map['isOn'] as bool,
@@ -20,6 +20,6 @@ class BleReminderConfig {
   final int week;
   final String weekDescription;
 
-  /// Drink-water SDK value, preserved without assuming its unit.
+  /// Drink-water/handwashing SDK value, preserved without assuming its unit.
   final int? duration;
 }

@@ -188,7 +188,8 @@ private final class HwBleBridgeImpl: NSObject {
       handleAlarms(method: call.method, result: result)
     case "addJlDemoAlarm":
       handleAddJlDemoAlarm(result: result)
-    case "getSedentaryReminder", "setDemoSedentaryReminder", "getDrinkWaterReminder", "setDemoDrinkWaterReminder":
+    case "getSedentaryReminder", "setDemoSedentaryReminder", "getDrinkWaterReminder", "setDemoDrinkWaterReminder",
+         "getHandwashingReminder", "setDemoHandwashingReminder":
       handleReminders(method: call.method, result: result)
     case "getHealthDataCount":
       sdk.getHealthDataCount { activityCount, sleepPointCount, heartrateCount, hrfCount, error in
@@ -615,6 +616,25 @@ private final class HwBleBridgeImpl: NSObject {
           }
         }
       }
+    case "getHandwashingReminder":
+      sdk.getHandwashingConfig { config, error in
+        DispatchQueue.main.async {
+          if let error = error {
+            result(self.flutterError(error))
+          } else if let config = config {
+            let week = Int(config.week.rawValue)
+            result([
+              "isOn": config.eventOn,
+              "startHour": Int(config.startHour), "startMinute": Int(config.startMinute),
+              "endHour": Int(config.endHour), "endMinute": Int(config.endMinute),
+              "intervalSeconds": Int(config.timeInterval), "duration": Int(config.duration),
+              "week": week, "weekDescription": self.weekDescription(week),
+            ])
+          } else {
+            result(FlutterError(code: "EMPTY_RESULT", message: "getHandwashingReminder returned nil", details: nil))
+          }
+        }
+      }
     case "setDemoSedentaryReminder":
       let reminder = HwSedentaryReminder()
       reminder.on = true
@@ -646,6 +666,26 @@ private final class HwBleBridgeImpl: NSObject {
         | Int(HwWeek.sunday.rawValue)
       config.setValue(everyDay, forKey: "week")
       sdk.setDrinkWaterConfig(config) { success, error in
+        DispatchQueue.main.async {
+          self.boolResult(success: success, error: error, result: result)
+        }
+      }
+    case "setDemoHandwashingReminder":
+      let config = HwHandwashingConfig()
+      config.eventOn = true
+      config.startHour = 8
+      config.startMinute = 0
+      config.endHour = 22
+      config.endMinute = 0
+      config.timeInterval = 7200
+      // Preserve the native demo's duration value without assuming its unit.
+      config.duration = 5
+      let everyDay = Int(HwWeek.monday.rawValue) | Int(HwWeek.tuesday.rawValue)
+        | Int(HwWeek.wednesday.rawValue) | Int(HwWeek.thursday.rawValue)
+        | Int(HwWeek.friday.rawValue) | Int(HwWeek.saturday.rawValue)
+        | Int(HwWeek.sunday.rawValue)
+      config.setValue(everyDay, forKey: "week")
+      sdk.setHandwashingConfig(config) { success, error in
         DispatchQueue.main.async {
           self.boolResult(success: success, error: error, result: result)
         }

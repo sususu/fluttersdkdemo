@@ -230,6 +230,13 @@ class HwBleSdk {
   Future<void> setDemoDrinkWaterReminder() =>
       _method.invokeMethod<void>('setDemoDrinkWaterReminder');
 
+  Future<BleReminderConfig> getHandwashingReminder() =>
+      _getReminderConfig('getHandwashingReminder');
+
+  /// Enables every day 08:00–22:00, every 7200 seconds (iOS demo).
+  Future<void> setDemoHandwashingReminder() =>
+      _method.invokeMethod<void>('setDemoHandwashingReminder');
+
   Future<BleReminderConfig> _getReminderConfig(String method) async {
     final map = await _method.invokeMethod<Map<dynamic, dynamic>>(method);
     if (map == null) throw StateError('$method returned empty result');

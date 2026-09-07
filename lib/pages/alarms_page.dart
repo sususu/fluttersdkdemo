@@ -348,8 +348,24 @@ class _AlarmsPagetate extends State<AlarmsPage> {
                   ),
                   const SizedBox(height: 8),
                   FilledButton.tonal(
-                    onPressed: () {},
-                    child: const Text('设置洗手提醒'),
+                    onPressed: _running
+                        ? null
+                        : () => _runReminder(
+                            label: '洗手提醒',
+                            read: _sdk.getHandwashingReminder,
+                          ),
+                    child: const Text('读取洗手提醒'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.tonal(
+                    onPressed: _running
+                        ? null
+                        : () => _runReminder(
+                            label: '洗手提醒',
+                            read: _sdk.getHandwashingReminder,
+                            write: _sdk.setDemoHandwashingReminder,
+                          ),
+                    child: const Text('设置洗手示例（每天 08–22 点，每两小时）'),
                   ),
                 ],
               ),
