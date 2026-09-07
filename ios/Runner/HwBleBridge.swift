@@ -180,6 +180,10 @@ private final class HwBleBridgeImpl: NSObject {
           result(bindState.rawValue)
         }
       }
+    case "getGoals":
+      handleGetGoals(result: result)
+    case "setGoal":
+      handleSetGoal(call: call, result: result)
     case "getHealthDataCount":
       sdk.getHealthDataCount { activityCount, sleepPointCount, heartrateCount, hrfCount, error in
         if let error = error {
@@ -373,6 +377,61 @@ private final class HwBleBridgeImpl: NSObject {
     sdk.setDeviceTime(date, is24H: use24) { success, error in
       self.boolResult(success: success, error: error, result: result)
     }
+  }
+
+  private func handleGetGoals(result: @escaping FlutterResult) {
+    guard sdk.connected() else {
+      result(FlutterError(code: "13", message: "getGoals failed: device disconnected", details: nil))
+      return
+    }
+    HwBluetoothCenter.sharedInstance().getGoalInfoModel { goal, error in
+      DispatchQueue.main.async {
+        if let error = error {
+          result(self.flutterError(error))
+        } else if let goal = goal {
+          // Keep protocol units: step=hundreds of steps, OT distances=tenths.
+          result([
+            "step": Int(goal.step),
+            "calorie": Int(goal.calorie),
+            "distance": Int(goal.distance),
+            "sleep": Int(goal.sleep),
+            "duration": Int(goal.duration),
+            "otDistance": self.goalIntValue(goal, keys: ["OTDistance", "otDistance"]),
+            "otDistanceMile": self.goalIntValue(goal, keys: ["OTDistanceMile", "otDistanceMile"]),
+          ])
+        } else {
+          result(FlutterError(code: "GOALS_EMPTY", message: "getGoals returned empty result", details: nil))
+        }
+      }
+    }
+  }
+
+  private func handleSetGoal(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    // Dart BleGoalType values are a channel contract, not native enum raw values.
+    let types: [HwGoalType] = [.step, .caloris, .distance, .sleep, .duration]
+    guard let args = call.arguments as? [String: Any],
+          let type = args["type"] as? Int, types.indices.contains(type),
+          let value = args["value"] as? Int, value >= 0 else {
+      result(FlutterError(code: "INVALID_ARGS", message: "setGoal requires type 0...4 and a non-negative integer value", details: nil))
+      return
+    }
+    guard sdk.connected() else {
+      result(FlutterError(code: "13", message: "setGoal failed: device disconnected", details: nil))
+      return
+    }
+    sdk.setGoalWith(types[type], goal: value) { success, error in
+      DispatchQueue.main.async {
+        self.boolResult(success: success, error: error, result: result)
+      }
+    }
+  }
+
+  private func goalIntValue(_ goal: HwGoal, keys: [String]) -> Int {
+    // The reference iOS demo supports both SDK spellings of optional OT fields.
+    for key in keys where goal.responds(to: NSSelectorFromString(key)) {
+      if let value = goal.value(forKey: key) as? NSNumber { return value.intValue }
+    }
+    return 0
   }
 
   private func handleGetHeartrates(result: @escaping FlutterResult) {
