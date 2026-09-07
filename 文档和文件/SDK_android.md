@@ -785,45 +785,65 @@ BluetoothSDK.getActivityData(new ActivityDataCallback() {
 
 #### WL 协议 V2：`getActivityDataV2`
 
-按需指定类型（枚举在 `com.huawo.sdk.bluetoothsdk.wl.models.ActivityDataType`）：
+该接口用于杰理（`HwPlatformType.JIELI`）设备，按调用方传入的类型数组依次拉取数据：
+
+```java
+BluetoothSDK.getActivityDataV2(
+        ActivityDataType[] dataTypes,
+        ActivityDataCallback callback
+);
+```
+
+当前批量接口支持以下类型（枚举在 `com.huawo.sdk.bluetoothsdk.wl.models.ActivityDataType`）：
 
 | ActivityDataType | 含义 | 回调落点 |
 |------------------|------|----------|
 | `STEP` | 步数活动 | `onSports(List<Sport>)` |
 | `SLEEP` | 睡眠 | `onSleeps(List<Sleep>)` |
 | `HEART_RATE` | 心率 | `onHeartrates(List<Heartrate>)` |
-| `STRESS` | 压力 | 进 `onHrvs`（`Hrv.stress`） |
-| `BLOOD_OXYGEN` | 血氧 | 进 `onHrvs`（`Hrv.spo2`） |
-| `WORKOUTS` | 运动记录 | 一般用 `getWorkoutV2`，不建议指望本批量接口 |
-| `AIRECORD` | AI 录音 | 另有专用接口 |
+| `HRV` | HRV  | `onHrvs(List<Hrv>)` |
+| `STRESS` | 压力 | `onStress(List<Stress>)` |
+| `BLOOD_OXYGEN` | 血氧 | `onSpo2(List<Spo2>)` |
 
-**压力 + 血氧同时请求时**：SDK 会按 `time` 合并为 `Hrv` 再 `onHrvs`；只请求其中一种时，也会包装成 `Hrv` 列表（另一字段为默认 0）。
+`WORKOUTS`、`AIRECORD` 虽然存在于 `ActivityDataType` 枚举中，但当前 `getActivityDataV2` 没有对应的结果回调分支，不应加入该接口的 `dataTypes`；运动记录和 AI 录音请使用各自的专用接口。
+
+HRV、压力和血氧是三类独立数据：SDK 不按时间合并，也不会把压力或血氧包装成 `Hrv`。App 应分别在 `onHrvs`、`onStress`、`onSpo2` 中保存。
 
 ```java
 ActivityDataType[] types = new ActivityDataType[]{
         ActivityDataType.STEP,
         ActivityDataType.SLEEP,
         ActivityDataType.HEART_RATE,
+        ActivityDataType.HRV,
         ActivityDataType.STRESS,
         ActivityDataType.BLOOD_OXYGEN
 };
 BluetoothSDK.getActivityDataV2(types, new ActivityDataCallback() {
     @Override public void onSports(List<Sport> sportList) { }
     @Override public void onSleeps(List<Sleep> sleepList) { }
-    @Override public void onHeartrates(List<Heartrate> list) { }
-    @Override public void onHrvs(List<Hrv> hrvList) { /* 血氧+压力 */ }
+    @Override public void onHeartrates(List<Heartrate> heartrateList) { }
+    @Override public void onHrvs(List<Hrv> hrvList) { }
+    @Override public void onStress(List<Stress> stressList) { }
+    @Override public void onSpo2(List<Spo2> spo2List) { }
     @Override public void onPais(List<PAI> paiList) { /* V2 批量通常无 PAI，可忽略 */ }
+
+    // 当前仅 HRV、压力、血氧的请求失败会带回具体类型。
+    @Override public void onFail(ActivityDataType dataType, int code) { }
+
+    // ActivityDataCallback 继承的抽象方法仍需实现。
     @Override public void onFail(int code) { }
 });
 ```
 
-```java
-if (BluetoothSDK.isWlProtocol()) {
-    // 优先 getActivityDataV2
-} else {
-    BluetoothSDK.getActivityData(...);
-}
-```
+执行和回调边界：
+
+1. 非空类型数组按传入顺序串行执行：先查询该类型的头信息，再按头信息中的包数逐包请求、解析并触发对应类型回调，然后继续下一个类型。
+2. 某类型无设备缓存数据时，会触发该类型的空列表回调，不会中断后续类型。
+3. HRV、压力或血氧的头请求/数据请求失败时，先触发 `onFail(ActivityDataType, int)`，随后触发对应空列表回调，并继续下一个类型。步数、睡眠、心率失败时，当前实现仅触发对应空列表回调。
+4. 业务数据解析异常时，当前实现记录错误日志并对该类型回调空列表；不会触发 `onFail(ActivityDataType, int)`。
+5. `dataTypes == null` 或长度为 0 时，并非使用默认类型，而是立即依次回调心率、HRV、压力、血氧、睡眠、步数的空列表后返回。
+
+内部接收会校验外层帧头和帧长度；业务解析还会校验空包、首包最小长度和声明的数据点数量，支持跨包残片拼接，并在达到声明数量后停止解析。
 
 ---
 
@@ -876,11 +896,13 @@ for (Heartrate hr : heartrateList) {
 
 ---
 
-#### 实体说明：`Hrv`（压力 / 血氧 / 疲劳等）
+#### 实体说明：`Hrv`（HRV / 疲劳度；老协议兼容压力、血氧字段）
 
-**含义**：老协议里常用一张结构承载压力、血氧、疲劳；类注释为 *stress/spo2 health data*。WL V2 在同时拉 `STRESS`+`BLOOD_OXYGEN` 时，也会合并进该结构再回调 `onHrvs`。  
-**回调**：`onHrvs`  
-**删除**：老协议 `delHrv`；WL 侧血氧/压力也可能对应 `delBlood` / 压力删除接口，以产品协议为准。
+**含义**：老协议里常用一张结构承载压力、血氧、疲劳。最新 WL V2 仅在请求 `ActivityDataType.HRV` 时生成 `Hrv` 并回调 `onHrvs`；其中 `fatigue` 保存协议中的 HRV 值，`stress`、`spo2` 置为 0。WL V2 的压力和血氧分别返回 `Stress`、`Spo2`，不再合并进 `Hrv`。
+
+**回调**：`onHrvs`
+
+**删除**：老协议使用 `delHrv`；WL V2 HRV 使用 `delHrvV2`，压力使用 `delStress`，血氧使用 `delBlood`。
 
 | 字段 | 类型 | 单位 / 说明 |
 |------|------|-------------|
@@ -899,7 +921,7 @@ for (Hrv h : hrvList) {
 }
 ```
 
-> WL 也可单独调用 `getStressV2` / `getSpo2V2`，得到独立的 `Stress`、`Spo2` 模型（字段分别为 `stress`/`spo2` + `time` + `index`）。
+> WL 除了通过 `getActivityDataV2` 分类型批量拉取，也可单独调用 `getHrvV2`、`getStressV2`、`getSpo2V2`。
 
 ---
 
@@ -978,22 +1000,23 @@ for (PAI pai : paiList) {
 
 ---
 
-#### 相关但未进批量回调的实体（按需单拉）
+#### V2 独立模型及其它按需单拉实体
 
-| 模型 | 说明 | 常用 API |
-|------|------|----------|
-| `Spo2` | 仅血氧点：`index` / `time(ms)` / `spo2` | `getSpo2V2` |
-| `Stress` | 仅压力点：`index` / `time(ms)` / `stress` | `getStressV2` |
+| 模型 | 说明 | 批量回调 / 单拉 API |
+|------|------|---------------------|
+| `Spo2` | 血氧点：`index` / `time(ms)` / `spo2` | `onSpo2` / `getSpo2V2` |
+| `Stress` | 压力点：`index` / `time(ms)` / `stress` | `onStress` / `getStressV2` |
 | `BloodPressure` | 血压：`systolic` 收缩压 / `diastolic` 舒张压 / `time(ms)` | `getBPs` / `delBPs` |
 | `Workout` | 运动课程（含轨迹等） | `getWorkouts` / `getWorkoutV2`（见 §10） |
 
 #### 使用建议
 
-1. 先 `isWlProtocol()`，再选 `getActivityData` 或 `getActivityDataV2`。  
-2. 各 `onXxx` **独立入库**；不要假设回调顺序固定。  
-3. 入库成功后再 `del*`，避免丢数与重复。  
-4. 卡路里单位是 **cal**；展示千卡需 `/1000`。  
-5. 睡眠时长字段多为 **毫秒**；UI 展示分钟时注意换算。
+1. 使用 App 已维护的 MCU 平台类型选择接口：`HwPlatformType.JIELI` 使用 `getActivityDataV2`，其它平台按对应协议选择；`BluetoothSDK.isWlProtocol()` 已废弃，不应作为新接入的路由依据。
+2. `getActivityDataV2` 只传当前已支持的六类数据，不传 `WORKOUTS`、`AIRECORD`。
+3. 各 `onXxx` **独立入库**；即使 SDK 按请求数组串行处理，也不要跨回调合并 HRV、压力、血氧。
+4. 入库成功后再调用对应的 `del*`，避免丢数与重复。
+5. 卡路里单位是 **cal**；展示千卡需 `/1000`。
+6. 睡眠时长字段多为 **毫秒**；UI 展示分钟时注意换算。
 
 ### 9.2 分类型拉取与删除
 
@@ -1369,16 +1392,79 @@ BluetoothSDK.getAlarms(new AlarmsCallback() {
     @Override public void onFail(int code) { }
 });
 
-if (BluetoothSDK.isWlProtocol()) {
-    BluetoothSDK.addAlarmV2(alarm, boolCallback);
-} else {
-    BluetoothSDK.addAlarm(alarm, boolCallback); // SDK 内会自动分配 id
+// mcuPlatformType 由 App 自己维护的设备状态提供。
+if (mcuPlatformType != HwPlatformType.JIELI) {
+    // 普通协议：SDK 会先向设备查询可用 ID，并覆盖 alarm.id。
+    BluetoothSDK.addAlarm(alarm, boolCallback);
 }
 
 BluetoothSDK.editAlarm(alarm, boolCallback);
 BluetoothSDK.delAlarmBy(alarmId, boolCallback);
 BluetoothSDK.delAllAlarms(boolCallback);
 ```
+
+#### 杰理闹钟 ID 规则
+
+杰理协议将闹钟和提醒划分为固定 ID 区间：
+
+| 数据类型 | ID 范围 | 最大数量 |
+|----------|---------|----------|
+| 闹钟 | `1`～`5` | 5 个 |
+| 提醒 | `6`～`10` | 5 个 |
+
+`BluetoothSDK.addAlarmV2()` 与普通的 `addAlarm()` 不同：它不会查询或分配可用 ID，而是直接把 `alarm.getId()` 写入新增指令。因此 App 必须先调用 `getAlarms()` 获取设备当前闹钟列表，只在 `1`～`5` 中选择未占用 ID，再调用 `addAlarmV2()`。
+
+```java
+private void addJieliAlarm(Alarm alarm, BoolCallback callback) {
+    BluetoothSDK.getAlarms(new AlarmsCallback() {
+        @Override
+        public void onSuccess(List<Alarm> alarms) {
+            boolean[] usedIds = new boolean[6]; // 有效下标为 1～5
+            if (alarms != null) {
+                for (Alarm existing : alarms) {
+                    int id = existing.getId();
+                    if (id >= 1 && id <= 5) {
+                        usedIds[id] = true;
+                    }
+                }
+            }
+
+            int availableId = 0;
+            for (int id = 1; id <= 5; id++) {
+                if (!usedIds[id]) {
+                    availableId = id;
+                    break;
+                }
+            }
+
+            if (availableId == 0) {
+                // 业务层提示“杰理闹钟已达到最大数量（最多 5 个）”，不要继续下发。
+                onJieliAlarmLimitReached();
+                return;
+            }
+
+            alarm.setId(availableId);
+            BluetoothSDK.addAlarmV2(alarm, callback);
+        }
+
+        @Override
+        public void onFail(int code) {
+            // 读取现有列表失败时不能猜测 ID，直接把失败返回业务层。
+            callback.onFail(code);
+        }
+    });
+}
+```
+
+注意事项：
+
+1. 不要直接固定使用 ID `1`，也不要只用“当前数量 + 1”；设备列表可能存在空洞，例如已有 ID 为 `1、3、5` 时，应选择 `2`。
+2. 不要直接使用 `Alarm.generateId()` 的 `1`～`254` 搜索结果作为杰理闹钟 ID；杰理闹钟必须额外限制在 `1`～`5`。
+3. 添加流程必须串行。在本次 `getAlarms()` 到 `addAlarmV2()` 完成前，应禁止再次发起添加，避免两个请求选择同一个 ID。
+4. `editAlarm()` 和 `delAlarmBy()` 必须沿用设备列表中已有的原始 ID；`delAllAlarms()` 不需要单独处理 ID。
+5. `getAlarms()` 失败或 `addAlarmV2()` 返回失败时，应保留错误码及所选 ID 的日志，不能按成功处理。
+
+内部流程为：`getAlarms()` 先查询闹钟数量，再按数量读取各条 `Alarm`；`addAlarmV2()` 将选定 ID 交给 `EditAlarm(CRUD.Create)` 下发。SDK 不会在这两个步骤之间替 App 保留或重新校验 ID。
 
 ### 11.2 久坐 / 喝水 / 洗手
 
