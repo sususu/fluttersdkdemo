@@ -229,9 +229,7 @@ class _AlarmsPagetate extends State<AlarmsPage> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
+
                       FilledButton.tonal(
                         onPressed: _running ? null : _readAlarms,
                         child: const Text('读取闹钟'),
@@ -271,8 +269,6 @@ class _AlarmsPagetate extends State<AlarmsPage> {
                         onPressed: () {},
                         child: const Text('设置洗手提醒'),
                       ),
-                    ],
-                  ),
                 ],
               ),
             ),
