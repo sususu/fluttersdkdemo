@@ -217,22 +217,14 @@ private final class HwBleBridgeImpl: NSObject {
           result((activities ?? []).map { self.activityMap($0) })
         }
       }
-    case "deleteSports":
-      sdk.deleteActivities { success, error in
-        self.boolResult(success: success, error: error, result: result)
-      }
+    case "getActivitiesV2", "getSleepPointsV2", "getHeartratesV2", "getSpo2sV2", "getStressesV2", "getWorkoutsV2":
+      handleGetJlHealth(method: call.method, result: result)
+    case "deleteSports", "deleteHeartrates", "deleteSleeps", "deleteSpo2s", "deleteStresses", "deleteWorkouts":
+      handleDeleteHealth(method: call.method, result: result)
     case "getHeartrates":
       handleGetHeartrates(result: result)
-    case "deleteHeartrates":
-      sdk.deleteHeartrates { success, error in
-        self.boolResult(success: success, error: error, result: result)
-      }
     case "getSleeps":
       handleGetSleeps(result: result)
-    case "deleteSleeps":
-      sdk.deleteSleeps { success, error in
-        self.boolResult(success: success, error: error, result: result)
-      }
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -839,10 +831,118 @@ private final class HwBleBridgeImpl: NSObject {
     return map
   }
 
-  private func activityMap(_ activity: HwActivity) -> [String: Any] {
+  private var jlHealthBusy = false
+
+  private func handleDeleteHealth(method: String, result: @escaping FlutterResult) {
+    guard sdk.connected() else {
+      result(FlutterError(code: "13", message: "\(method) failed: device disconnected", details: nil))
+      return
+    }
+    guard !jlHealthBusy else {
+      result(FlutterError(code: "JL_HEALTH_BUSY", message: "健康数据操作尚未完成", details: nil))
+      return
+    }
+    guard let center = HwBluetoothCenter.sharedInstance() else {
+      result(FlutterError(code: "NOT_INITIALIZED", message: "蓝牙中心尚未初始化", details: nil))
+      return
+    }
+    jlHealthBusy = true
+    let complete: (Bool, Error?) -> Void = { success, error in
+      DispatchQueue.main.async {
+        self.jlHealthBusy = false
+        self.boolResult(success: success, error: error, result: result)
+      }
+    }
+    // Same category-specific delete APIs as JieliHealthRepository in the native demo.
+    switch method {
+    case "deleteSports": sdk.deleteActivities(callback: complete)
+    case "deleteSleeps": sdk.deleteSleeps(callback: complete)
+    case "deleteHeartrates": sdk.deleteHeartrates(callback: complete)
+    case "deleteSpo2s": center.deleteBloodOxygen(callback: complete)
+    case "deleteStresses": center.deleteStress(callback: complete)
+    case "deleteWorkouts": sdk.deleteWorkouts(callback: complete)
+    default:
+      jlHealthBusy = false
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func handleGetJlHealth(method: String, result: @escaping FlutterResult) {
+    guard sdk.connected() else {
+      result(FlutterError(code: "13", message: "\(method) failed: device disconnected", details: nil))
+      return
+    }
+    guard !jlHealthBusy else {
+      result(FlutterError(code: "JL_HEALTH_BUSY", message: "健康数据操作尚未完成", details: nil))
+      return
+    }
+    guard let center = HwBluetoothCenter.sharedInstance() else {
+      result(FlutterError(code: "NOT_INITIALIZED", message: "蓝牙中心尚未初始化", details: nil))
+      return
+    }
+    jlHealthBusy = true
+    func complete<T>(_ list: [Any]?, error: Error?, map: @escaping (T) -> [String: Any]) {
+      DispatchQueue.main.async {
+        self.jlHealthBusy = false
+        if let error = error {
+          result(self.flutterError(error))
+        } else if let items = (list ?? []) as? [T] {
+          result(items.map(map))
+        } else {
+          result(FlutterError(code: "HEALTH_MAPPING_ERROR", message: "\(method) returned unexpected models", details: nil))
+        }
+      }
+    }
+    // Native demo: activity/workout timestamps are ms; point measurements are seconds.
+    switch method {
+    case "getActivitiesV2":
+      center.getSportDetailBigData { list, error in
+        complete(list, error: error) { (item: HwActivity) in
+          self.activityMap(item, timeIsMilliseconds: true)
+        }
+      }
+    case "getSleepPointsV2":
+      center.getSleepBigData { list, error in
+        complete(list, error: error) { (item: HwSleepPoint) in
+          ["timeMs": Int(item.time * 1000), "status": Int(item.status.rawValue)]
+        }
+      }
+    case "getHeartratesV2":
+      center.getHeartRateBigData { list, error in
+        complete(list, error: error, map: self.heartrateMap)
+      }
+    case "getSpo2sV2":
+      center.getBloodOxygenBigData { list, error in
+        complete(list, error: error) { (item: HwSpo2) in
+          ["timeMs": Int(item.time * 1000), "spo2": Int(item.spo2)]
+        }
+      }
+    case "getStressesV2":
+      center.getStressBigData { list, error in
+        complete(list, error: error) { (item: HwStress) in
+          ["timeMs": Int(item.time * 1000), "stress": Int(item.stress)]
+        }
+      }
+    case "getWorkoutsV2":
+      center.getWorkoutsBigData { list, error in
+        complete(list, error: error) { (item: HwWorkout) in
+          ["startTimeMs": Int(item.startTime), "endTimeMs": Int(item.endTime),
+           "type": Int(item.type.rawValue), "step": Int(item.step),
+           "distance": Int(item.distance), "calorie": Int(item.calorie),
+           "duration": Int(item.duration), "bpm": Int(item.bpm)]
+        }
+      }
+    default:
+      jlHealthBusy = false
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func activityMap(_ activity: HwActivity, timeIsMilliseconds: Bool = false) -> [String: Any] {
     [
       "index": activity.index,
-      "timeMs": Int(activity.time * 1000),
+      // The native Jieli demo treats BigData activity.time as milliseconds.
+      "timeMs": Int(timeIsMilliseconds ? activity.time : activity.time * 1000),
       "step": activity.step,
       "calorie": activity.calorie,
       "staticCalorie": activity.staticCalorie,

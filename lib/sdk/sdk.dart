@@ -14,6 +14,8 @@ export 'models/ble_goal_type.dart';
 export 'models/ble_heartrate.dart';
 export 'models/ble_hrv.dart';
 export 'models/ble_sleep.dart';
+export 'models/ble_sleep_point.dart';
+export 'models/ble_workout.dart';
 export 'models/ble_spo2.dart';
 export 'models/ble_stress.dart';
 export 'models/ble_unit.dart';

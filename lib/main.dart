@@ -6,6 +6,7 @@ import 'package:sdkdemo/bound_device_store.dart';
 import 'package:sdkdemo/pages/alarms_page.dart';
 import 'package:sdkdemo/pages/bind_flow_sheet.dart';
 import 'package:sdkdemo/pages/goals_page.dart';
+import 'package:sdkdemo/pages/jieli_health_page.dart';
 import 'package:sdkdemo/pages/scan_connect_page.dart';
 import 'package:sdkdemo/pages/unbind_flow_sheet.dart';
 import 'package:sdkdemo/sdk/sdk.dart';
@@ -611,7 +612,17 @@ class _HomePageState extends State<HomePage> {
                   children: [
                     Expanded(
                       child: FilledButton.tonalIcon(
-                        onPressed: canSync ? _syncJLHealthData : null,
+                        onPressed: !canSync
+                            ? null
+                            : () {
+                                if (Platform.isAndroid) {
+                                  _syncJLHealthData();
+                                } else {
+                                  Navigator.of(context).push<void>(
+                                    MaterialPageRoute(builder: (_) => const JieliHealthPage()),
+                                  );
+                                }
+                              },
                         icon: const Icon(Icons.sync),
                         label: const Text('同步数据（杰理）'),
                       ),
