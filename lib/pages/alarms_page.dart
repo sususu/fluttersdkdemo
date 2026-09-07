@@ -1,10 +1,8 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../sdk/hw_ble_sdk.dart';
 import '../sdk/models/ble_alarm.dart';
-
 
 class AlarmsPage extends StatefulWidget {
   const AlarmsPage({super.key});
@@ -26,9 +24,9 @@ class _AlarmsPagetate extends State<AlarmsPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-              width: 80,
-              child: Text('结果', style:  theme.textTheme.titleSmall)
-           ),
+            width: 80,
+            child: Text('结果', style: theme.textTheme.titleSmall),
+          ),
           const SizedBox(height: 4),
           if (_alarms != null && _alarms!.isEmpty)
             const Text('暂无闹钟')
@@ -37,7 +35,7 @@ class _AlarmsPagetate extends State<AlarmsPage> {
               final time = alarm.hour == null || alarm.minute == null
                   ? '--:--'
                   : '${alarm.hour!.toString().padLeft(2, '0')}:'
-                      '${alarm.minute!.toString().padLeft(2, '0')}';
+                        '${alarm.minute!.toString().padLeft(2, '0')}';
               return Text(
                 '#${alarm.id} $time on=${alarm.isOn} ${alarm.content} week=${alarm.weekDescription}',
               );
@@ -68,7 +66,7 @@ class _AlarmsPagetate extends State<AlarmsPage> {
         _alarms = alarms;
         _status = '读取闹钟完成，共 ${alarms.length} 个';
       });
-    } catch (error, stackTrace) {
+    } catch (error) {
       debugPrint('[ALARMS][EXCEPTION] action=readAlarms error=$error');
       if (!mounted) return;
       setState(() {
@@ -111,6 +109,7 @@ class _AlarmsPagetate extends State<AlarmsPage> {
       }
     }
   }
+
   Future<void> _addJLAlarm() async {
     debugPrint('[ALARMS][ENTER] action=addJlDemoAlarm hour=7 minute=30');
     setState(() {
@@ -139,7 +138,7 @@ class _AlarmsPagetate extends State<AlarmsPage> {
       if (!mounted) return;
       setState(() {
         _status = error.code == 'JL_ALARM_ID_UNAVAILABLE'
-            ? '杰理闹钟已达到最大数量（最多 5 个）'
+            ? '杰理示例闹钟 ID 1–5 已被闹钟或提醒占用'
             : '添加杰理示例闹钟失败：[${error.code}] ${error.message ?? ''}';
       });
     } catch (error) {
@@ -160,6 +159,7 @@ class _AlarmsPagetate extends State<AlarmsPage> {
     setState(() {
       _running = true;
       _status = '正在删除全部闹钟…';
+      _alarms = null;
     });
 
     try {
@@ -200,7 +200,7 @@ class _AlarmsPagetate extends State<AlarmsPage> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('闹钟与提醒')),
-      body: Column(
+      body: ListView(
         children: [
           Material(
             color: theme.colorScheme.surfaceContainerLow,
@@ -244,7 +244,7 @@ class _AlarmsPagetate extends State<AlarmsPage> {
                       const SizedBox(height: 8),
                       FilledButton.tonal(
                         onPressed: _running ? null : _addJLAlarm,
-                        child: const Text('添加示例闹钟（工作日 07:30）（杰理）'),
+                        child: const Text('添加杰理示例闹钟（工作日 07:30）'),
                       ),
                       const SizedBox(height: 8),
                       FilledButton.tonal(

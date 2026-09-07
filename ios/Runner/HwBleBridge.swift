@@ -186,6 +186,8 @@ private final class HwBleBridgeImpl: NSObject {
       handleSetGoal(call: call, result: result)
     case "getAlarms", "addDemoAlarm", "deleteAllAlarms":
       handleAlarms(method: call.method, result: result)
+    case "addJlDemoAlarm":
+      handleAddJlDemoAlarm(result: result)
     case "getHealthDataCount":
       sdk.getHealthDataCount { activityCount, sleepPointCount, heartrateCount, hrfCount, error in
         if let error = error {
@@ -429,17 +431,12 @@ private final class HwBleBridgeImpl: NSObject {
 
   private func alarmMap(_ alarm: HwAlarm) -> [String: Any] {
     let week = Int(alarm.week.rawValue)
-    let days: [(HwWeek, String)] = [
-      (.monday, "周一"), (.tuesday, "周二"), (.wednesday, "周三"),
-      (.thursday, "周四"), (.friday, "周五"), (.saturday, "周六"), (.sunday, "周日"),
-    ]
-    let names = days.filter { week & Int($0.0.rawValue) != 0 }.map { $0.1 }
     var map: [String: Any] = [
       "id": (alarm.value(forKey: "Id") as? NSNumber)?.intValue ?? 0,
       "isOn": (alarm.value(forKey: "S") as? NSNumber)?.boolValue ?? false,
       "content": alarm.custom ?? "",
       "week": week,
-      "weekDescription": names.isEmpty ? "不重复" : names.joined(separator: ","),
+      "weekDescription": weekDescription(week),
     ]
     if let time = (alarm.times as? [HwTimePoint])?.first {
       map["hour"] = Int(time.hour)
@@ -451,6 +448,117 @@ private final class HwBleBridgeImpl: NSObject {
       map["snooze"] = snooze.intValue
     }
     return map
+  }
+
+  private func weekDescription(_ week: Int) -> String {
+    let days: [(HwWeek, String)] = [
+      (.monday, "周一"), (.tuesday, "周二"), (.wednesday, "周三"),
+      (.thursday, "周四"), (.friday, "周五"), (.saturday, "周六"), (.sunday, "周日"),
+    ]
+    let names = days.filter { week & Int($0.0.rawValue) != 0 }.map { $0.1 }
+    return names.isEmpty ? "不重复" : names.joined(separator: ",")
+  }
+
+  private var jlAlarmsBusy = false
+
+  private func handleAddJlDemoAlarm(result: @escaping FlutterResult) {
+    let method = "addJlDemoAlarm"
+    guard sdk.connected() else {
+      result(FlutterError(code: "13", message: "\(method) failed: device disconnected", details: nil))
+      return
+    }
+    // Serialize read/allocate/write so concurrent callers cannot select the same ID.
+    guard !jlAlarmsBusy else {
+      result(FlutterError(code: "JL_ALARMS_BUSY", message: "杰理闹钟操作尚未完成", details: nil))
+      return
+    }
+    jlAlarmsBusy = true
+    let finish: FlutterResult = { value in
+      self.jlAlarmsBusy = false
+      result(value)
+    }
+    readJlItems(reminders: false) { response in
+      switch response {
+      case .failure(let error):
+        finish(self.flutterError(error))
+      case .success(let alarms):
+        self.readJlItems(reminders: true) { response in
+          switch response {
+          case .failure(let error):
+            finish(self.flutterError(error))
+          case .success(let reminders):
+            let usedIDs = Set((alarms + reminders).map(\.id))
+            // Demo range, not a claim about the device's total capacity.
+            guard let id = (1...5).first(where: { !usedIDs.contains($0) }) else {
+              finish(FlutterError(code: "JL_ALARM_ID_UNAVAILABLE", message: "杰理示例闹钟 ID 1–5 已被闹钟或提醒占用", details: nil))
+              return
+            }
+            let alarm = HwReminder()
+            alarm.id = id
+            alarm.s = true
+            alarm.hour = 7
+            alarm.min = 30
+            alarm.custom = "起床"
+            alarm.type = .awake
+            alarm.repeatType = .none
+            alarm.repeatValue = 0
+            alarm.vib = .stateShortAlways
+            alarm.times = [HwTimePoint(hour: 7, minute: 30)]
+            let weekdays = Int(HwWeek.monday.rawValue) | Int(HwWeek.tuesday.rawValue)
+              | Int(HwWeek.wednesday.rawValue) | Int(HwWeek.thursday.rawValue)
+              | Int(HwWeek.friday.rawValue)
+            alarm.setValue(weekdays, forKey: "week")
+            HwBluetoothCenter.sharedInstance().add(alarm, identify: UInt(id)) { success, error in
+              DispatchQueue.main.async {
+                self.boolResult(success: success, error: error) { value in
+                  finish(success && error == nil ? id : value)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private func readJlItems(reminders: Bool, completion: @escaping (Result<[HwReminder], Error>) -> Void) {
+    guard let center = HwBluetoothCenter.sharedInstance() else {
+      completion(.failure(NSError(domain: "HwBleBridge", code: -1,
+        userInfo: [NSLocalizedDescriptionKey: "蓝牙中心尚未初始化"])))
+      return
+    }
+    center.getRemindAndAlarmCount { reminderCount, alarmCount, error in
+      DispatchQueue.main.async {
+        if let error = error {
+          completion(.failure(error))
+          return
+        }
+        let count = Int(reminders ? reminderCount : alarmCount)
+        if count == 0 {
+          completion(.success([]))
+          return
+        }
+        let callback: ([Any]?, Error?) -> Void = { list, error in
+          DispatchQueue.main.async {
+            if let error = error {
+              completion(.failure(error))
+            } else if let items = list as? [HwReminder], items.count == count,
+                      items.allSatisfy({ $0.id > 0 }) {
+              completion(.success(items))
+            } else {
+              // An incomplete list is unsafe for shared-ID allocation.
+              completion(.failure(NSError(domain: "HwBleBridge", code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "杰理闹钟/提醒列表不完整或 ID 无效，请重新读取"])))
+            }
+          }
+        }
+        if reminders {
+          center.getRemindersWithCount(count, callback: callback)
+        } else {
+          center.getAlarmsWithCount(count, callback: callback)
+        }
+      }
+    }
   }
 
   private func handleGetGoals(result: @escaping FlutterResult) {
