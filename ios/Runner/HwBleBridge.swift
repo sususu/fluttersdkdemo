@@ -184,6 +184,8 @@ private final class HwBleBridgeImpl: NSObject {
       handleGetGoals(result: result)
     case "setGoal":
       handleSetGoal(call: call, result: result)
+    case "getAlarms", "addDemoAlarm", "deleteAllAlarms":
+      handleAlarms(method: call.method, result: result)
     case "getHealthDataCount":
       sdk.getHealthDataCount { activityCount, sleepPointCount, heartrateCount, hrfCount, error in
         if let error = error {
@@ -377,6 +379,78 @@ private final class HwBleBridgeImpl: NSObject {
     sdk.setDeviceTime(date, is24H: use24) { success, error in
       self.boolResult(success: success, error: error, result: result)
     }
+  }
+
+  private func handleAlarms(method: String, result: @escaping FlutterResult) {
+    guard sdk.connected() else {
+      result(FlutterError(code: "13", message: "\(method) failed: device disconnected", details: nil))
+      return
+    }
+    switch method {
+    case "getAlarms":
+      sdk.getAlarmsWithCallback { alarms, error in
+        DispatchQueue.main.async {
+          if let error = error {
+            result(self.flutterError(error))
+          } else {
+            guard let alarms = (alarms ?? []) as? [HwAlarm] else {
+              result(FlutterError(code: "ALARMS_MAPPING_ERROR", message: "getAlarms returned unexpected models", details: nil))
+              return
+            }
+            result(alarms.map { self.alarmMap($0) })
+          }
+        }
+      }
+    case "addDemoAlarm":
+      let alarm = HwAlarm()
+      alarm.setValue(true, forKey: "S")
+      alarm.custom = "起床"
+      alarm.times = [HwTimePoint(hour: 7, minute: 30)]
+      let weekdays = Int(HwWeek.monday.rawValue) | Int(HwWeek.tuesday.rawValue)
+        | Int(HwWeek.wednesday.rawValue) | Int(HwWeek.thursday.rawValue)
+        | Int(HwWeek.friday.rawValue)
+      alarm.setValue(weekdays, forKey: "week")
+      // Standard addAlarm allocates its own ID, matching the native demo.
+      sdk.add(alarm) { success, error in
+        DispatchQueue.main.async {
+          self.boolResult(success: success, error: error, result: result)
+        }
+      }
+    case "deleteAllAlarms":
+      sdk.deleteAlarms { success, error in
+        DispatchQueue.main.async {
+          self.boolResult(success: success, error: error, result: result)
+        }
+      }
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func alarmMap(_ alarm: HwAlarm) -> [String: Any] {
+    let week = Int(alarm.week.rawValue)
+    let days: [(HwWeek, String)] = [
+      (.monday, "周一"), (.tuesday, "周二"), (.wednesday, "周三"),
+      (.thursday, "周四"), (.friday, "周五"), (.saturday, "周六"), (.sunday, "周日"),
+    ]
+    let names = days.filter { week & Int($0.0.rawValue) != 0 }.map { $0.1 }
+    var map: [String: Any] = [
+      "id": (alarm.value(forKey: "Id") as? NSNumber)?.intValue ?? 0,
+      "isOn": (alarm.value(forKey: "S") as? NSNumber)?.boolValue ?? false,
+      "content": alarm.custom ?? "",
+      "week": week,
+      "weekDescription": names.isEmpty ? "不重复" : names.joined(separator: ","),
+    ]
+    if let time = (alarm.times as? [HwTimePoint])?.first {
+      map["hour"] = Int(time.hour)
+      map["minute"] = Int(time.minute)
+    }
+    // Some HwAlarm versions omit snooze; absence keeps the Dart model's default.
+    if alarm.responds(to: NSSelectorFromString("snooze")),
+       let snooze = alarm.value(forKey: "snooze") as? NSNumber {
+      map["snooze"] = snooze.intValue
+    }
+    return map
   }
 
   private func handleGetGoals(result: @escaping FlutterResult) {
