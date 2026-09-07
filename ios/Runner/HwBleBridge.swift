@@ -188,6 +188,8 @@ private final class HwBleBridgeImpl: NSObject {
       handleAlarms(method: call.method, result: result)
     case "addJlDemoAlarm":
       handleAddJlDemoAlarm(result: result)
+    case "getSedentaryReminder", "setDemoSedentaryReminder", "getDrinkWaterReminder", "setDemoDrinkWaterReminder":
+      handleReminders(method: call.method, result: result)
     case "getHealthDataCount":
       sdk.getHealthDataCount { activityCount, sleepPointCount, heartrateCount, hrfCount, error in
         if let error = error {
@@ -558,6 +560,98 @@ private final class HwBleBridgeImpl: NSObject {
           center.getAlarmsWithCount(count, callback: callback)
         }
       }
+    }
+  }
+
+  private func handleReminders(method: String, result: @escaping FlutterResult) {
+    guard sdk.connected() else {
+      result(FlutterError(code: "13", message: "\(method) failed: device disconnected", details: nil))
+      return
+    }
+    switch method {
+    case "getSedentaryReminder":
+      sdk.getSedentaryReminder { reminder, error in
+        DispatchQueue.main.async {
+          if let error = error {
+            result(self.flutterError(error))
+          } else if let reminder = reminder {
+            let week = Int(reminder.week.rawValue)
+            var map: [String: Any] = [
+              "isOn": reminder.on, "intervalSeconds": Int(reminder.interval),
+              "week": week, "weekDescription": self.weekDescription(week),
+            ]
+            let startTime: HwTimePoint? = reminder.startTime
+            let endTime: HwTimePoint? = reminder.endTime
+            if let start = startTime {
+              map["startHour"] = Int(start.hour)
+              map["startMinute"] = Int(start.minute)
+            }
+            if let end = endTime {
+              map["endHour"] = Int(end.hour)
+              map["endMinute"] = Int(end.minute)
+            }
+            result(map)
+          } else {
+            result(FlutterError(code: "EMPTY_RESULT", message: "getSedentaryReminder returned nil", details: nil))
+          }
+        }
+      }
+    case "getDrinkWaterReminder":
+      sdk.getDrinkWaterConfig { config, error in
+        DispatchQueue.main.async {
+          if let error = error {
+            result(self.flutterError(error))
+          } else if let config = config {
+            let week = Int(config.week.rawValue)
+            result([
+              "isOn": config.eventOn,
+              "startHour": Int(config.startHour), "startMinute": Int(config.startMinute),
+              "endHour": Int(config.endHour), "endMinute": Int(config.endMinute),
+              "intervalSeconds": Int(config.timeInterval), "duration": Int(config.duration),
+              "week": week, "weekDescription": self.weekDescription(week),
+            ])
+          } else {
+            result(FlutterError(code: "EMPTY_RESULT", message: "getDrinkWaterReminder returned nil", details: nil))
+          }
+        }
+      }
+    case "setDemoSedentaryReminder":
+      let reminder = HwSedentaryReminder()
+      reminder.on = true
+      reminder.startTime = HwTimePoint(hour: 9, minute: 0)
+      reminder.endTime = HwTimePoint(hour: 18, minute: 0)
+      reminder.interval = 3600
+      let weekdays = Int(HwWeek.monday.rawValue) | Int(HwWeek.tuesday.rawValue)
+        | Int(HwWeek.wednesday.rawValue) | Int(HwWeek.thursday.rawValue)
+        | Int(HwWeek.friday.rawValue)
+      reminder.setValue(weekdays, forKey: "week")
+      sdk.setSedentaryReminder(reminder) { success, error in
+        DispatchQueue.main.async {
+          self.boolResult(success: success, error: error, result: result)
+        }
+      }
+    case "setDemoDrinkWaterReminder":
+      let config = HwDrinkWaterConfig()
+      config.eventOn = true
+      config.startHour = 8
+      config.startMinute = 0
+      config.endHour = 20
+      config.endMinute = 0
+      config.timeInterval = 3600
+      // Preserve the native demo's duration value; its unit is not documented here.
+      config.duration = 5
+      let everyDay = Int(HwWeek.monday.rawValue) | Int(HwWeek.tuesday.rawValue)
+        | Int(HwWeek.wednesday.rawValue) | Int(HwWeek.thursday.rawValue)
+        | Int(HwWeek.friday.rawValue) | Int(HwWeek.saturday.rawValue)
+        | Int(HwWeek.sunday.rawValue)
+      config.setValue(everyDay, forKey: "week")
+      sdk.setDrinkWaterConfig(config) { success, error in
+        DispatchQueue.main.async {
+          self.boolResult(success: success, error: error, result: result)
+        }
+      }
+    default:
+      result(FlutterMethodNotImplemented)
     }
   }
 

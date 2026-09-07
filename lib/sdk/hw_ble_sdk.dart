@@ -5,6 +5,7 @@ import 'package:sdkdemo/sdk/hw_ble_events.dart';
 import 'package:sdkdemo/sdk/models/bind_type.dart';
 import 'package:sdkdemo/sdk/models/ble_activity.dart';
 import 'package:sdkdemo/sdk/models/ble_alarm.dart';
+import 'package:sdkdemo/sdk/models/ble_reminder_config.dart';
 import 'package:sdkdemo/sdk/models/ble_bind_state.dart';
 import 'package:sdkdemo/sdk/models/ble_device.dart';
 import 'package:sdkdemo/sdk/models/ble_device_info.dart';
@@ -214,6 +215,26 @@ class HwBleSdk {
 
   Future<void> deleteAllAlarms() =>
       _method.invokeMethod<void>('deleteAllAlarms');
+
+  Future<BleReminderConfig> getSedentaryReminder() =>
+      _getReminderConfig('getSedentaryReminder');
+
+  /// Enables weekdays 09:00–18:00, every 3600 seconds (iOS demo).
+  Future<void> setDemoSedentaryReminder() =>
+      _method.invokeMethod<void>('setDemoSedentaryReminder');
+
+  Future<BleReminderConfig> getDrinkWaterReminder() =>
+      _getReminderConfig('getDrinkWaterReminder');
+
+  /// Enables every day 08:00–20:00, every 3600 seconds (iOS demo).
+  Future<void> setDemoDrinkWaterReminder() =>
+      _method.invokeMethod<void>('setDemoDrinkWaterReminder');
+
+  Future<BleReminderConfig> _getReminderConfig(String method) async {
+    final map = await _method.invokeMethod<Map<dynamic, dynamic>>(method);
+    if (map == null) throw StateError('$method returned empty result');
+    return BleReminderConfig.fromMap(map);
+  }
 
   Future<List<BleActivity>> getActivities(int activityCount) async {
     final list = await _method.invokeMethod<List<dynamic>>('getActivities', {

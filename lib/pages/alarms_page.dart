@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../sdk/hw_ble_sdk.dart';
 import '../sdk/models/ble_alarm.dart';
+import '../sdk/models/ble_reminder_config.dart';
 
 class AlarmsPage extends StatefulWidget {
   const AlarmsPage({super.key});
@@ -16,6 +17,7 @@ class _AlarmsPagetate extends State<AlarmsPage> {
   bool _running = false;
   String _status = '点击下方按钮';
   List<BleAlarm>? _alarms;
+  String? _reminderResult;
 
   Widget _buildAlarmResult(ThemeData theme) {
     return Padding(
@@ -28,6 +30,7 @@ class _AlarmsPagetate extends State<AlarmsPage> {
             child: Text('结果', style: theme.textTheme.titleSmall),
           ),
           const SizedBox(height: 4),
+          if (_reminderResult != null) Text(_reminderResult!),
           if (_alarms != null && _alarms!.isEmpty)
             const Text('暂无闹钟')
           else if (_alarms != null)
@@ -51,6 +54,7 @@ class _AlarmsPagetate extends State<AlarmsPage> {
       _running = true;
       _status = '正在读取闹钟…';
       _alarms = null;
+      _reminderResult = null;
     });
 
     try {
@@ -85,6 +89,7 @@ class _AlarmsPagetate extends State<AlarmsPage> {
       _running = true;
       _status = '正在添加示例闹钟…';
       _alarms = null;
+      _reminderResult = null;
     });
 
     try {
@@ -116,6 +121,7 @@ class _AlarmsPagetate extends State<AlarmsPage> {
       _running = true;
       _status = '正在添加杰理示例闹钟…';
       _alarms = null;
+      _reminderResult = null;
     });
 
     try {
@@ -160,6 +166,7 @@ class _AlarmsPagetate extends State<AlarmsPage> {
       _running = true;
       _status = '正在删除全部闹钟…';
       _alarms = null;
+      _reminderResult = null;
     });
 
     try {
@@ -192,6 +199,54 @@ class _AlarmsPagetate extends State<AlarmsPage> {
       if (mounted) {
         setState(() => _running = false);
       }
+    }
+  }
+
+  Future<void> _runReminder({
+    required String label,
+    required Future<BleReminderConfig> Function() read,
+    Future<void> Function()? write,
+  }) async {
+    final action = write == null ? '读取' : '设置';
+    setState(() {
+      _running = true;
+      _status = '正在$action$label…';
+      _alarms = null;
+      _reminderResult = null;
+    });
+    bool didWrite = false;
+    try {
+      if (!await _sdk.isConnected()) throw StateError('设备未连接');
+      if (write != null) {
+        await write();
+        didWrite = true;
+      }
+      final config = await read();
+      if (!mounted) return;
+      String time(int? hour, int? minute) => hour == null || minute == null
+          ? '--:--'
+          : '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+      setState(() {
+        _status = didWrite ? '$label设置成功，已回读' : '$label读取完成';
+        _reminderResult =
+            '$label：${config.isOn ? '开启' : '关闭'}\n'
+            '时段：${time(config.startHour, config.startMinute)}–${time(config.endHour, config.endMinute)}\n'
+            '间隔：${config.intervalSeconds} 秒\n'
+            '重复：${config.weekDescription}'
+            '${config.duration == null ? '' : '\n持续参数：${config.duration}（SDK 原始值）'}';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is MissingPluginException
+          ? '当前平台尚未接入此提醒接口'
+          : error.toString();
+      setState(() {
+        _status = didWrite
+            ? '$label设置成功，但回读失败：$message'
+            : '$action$label失败：$message';
+      });
+    } finally {
+      if (mounted) setState(() => _running = false);
     }
   }
 
@@ -230,45 +285,72 @@ class _AlarmsPagetate extends State<AlarmsPage> {
                   ),
                   const SizedBox(height: 12),
 
-                      FilledButton.tonal(
-                        onPressed: _running ? null : _readAlarms,
-                        child: const Text('读取闹钟'),
-                      ),
-                      const SizedBox(height: 8),
-                      FilledButton.tonal(
-                        onPressed: _running ? null : _addDemoAlarm,
-                        child: const Text('添加示例闹钟（工作日 07:30）'),
-                      ),
-                      const SizedBox(height: 8),
-                      FilledButton.tonal(
-                        onPressed: _running ? null : _addJLAlarm,
-                        child: const Text('添加杰理示例闹钟（工作日 07:30）'),
-                      ),
-                      const SizedBox(height: 8),
-                      FilledButton.tonal(
-                        onPressed: _running ? null : _deleteAllAlarms,
-                        child: const Text('删除全部闹钟'),
-                      ),
-                      const SizedBox(height: 8),
-                      FilledButton.tonal(
-                        onPressed: () {},
-                        child: const Text('读取久坐提醒'),
-                      ),
-                      const SizedBox(height: 8),
-                      FilledButton.tonal(
-                        onPressed: () {},
-                        child: const Text('设置久坐提醒'),
-                      ),
-                      const SizedBox(height: 8),
-                      FilledButton.tonal(
-                        onPressed: () {},
-                        child: const Text('读取喝水提醒'),
-                      ),
-                      const SizedBox(height: 8),
-                      FilledButton.tonal(
-                        onPressed: () {},
-                        child: const Text('设置洗手提醒'),
-                      ),
+                  FilledButton.tonal(
+                    onPressed: _running ? null : _readAlarms,
+                    child: const Text('读取闹钟'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.tonal(
+                    onPressed: _running ? null : _addDemoAlarm,
+                    child: const Text('添加示例闹钟（工作日 07:30）'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.tonal(
+                    onPressed: _running ? null : _addJLAlarm,
+                    child: const Text('添加杰理示例闹钟（工作日 07:30）'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.tonal(
+                    onPressed: _running ? null : _deleteAllAlarms,
+                    child: const Text('删除全部闹钟'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.tonal(
+                    onPressed: _running
+                        ? null
+                        : () => _runReminder(
+                            label: '久坐提醒',
+                            read: _sdk.getSedentaryReminder,
+                          ),
+                    child: const Text('读取久坐提醒'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.tonal(
+                    onPressed: _running
+                        ? null
+                        : () => _runReminder(
+                            label: '久坐提醒',
+                            read: _sdk.getSedentaryReminder,
+                            write: _sdk.setDemoSedentaryReminder,
+                          ),
+                    child: const Text('设置久坐示例（工作日 09–18 点，每小时）'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.tonal(
+                    onPressed: _running
+                        ? null
+                        : () => _runReminder(
+                            label: '喝水提醒',
+                            read: _sdk.getDrinkWaterReminder,
+                          ),
+                    child: const Text('读取喝水提醒'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.tonal(
+                    onPressed: _running
+                        ? null
+                        : () => _runReminder(
+                            label: '喝水提醒',
+                            read: _sdk.getDrinkWaterReminder,
+                            write: _sdk.setDemoDrinkWaterReminder,
+                          ),
+                    child: const Text('设置喝水示例（每天 08–20 点，每小时）'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.tonal(
+                    onPressed: () {},
+                    child: const Text('设置洗手提醒'),
+                  ),
                 ],
               ),
             ),
