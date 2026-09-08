@@ -52,7 +52,7 @@ private final class HwBleBridgeImpl: NSObject {
     if ota.busy && !["cancelOta", "isConnected", "disconnect", "destroy"].contains(call.method) {
       result(FlutterError(code: "BUSY", message: "请先完成或取消 OTA 操作", details: nil)); return
     }
-    if fileTransfer.busy && !["cancelMusicTransfer", "cancelAlbumTransfer", "cancelAgpsUpdate", "isConnected", "disconnect", "destroy"].contains(call.method) {
+    if fileTransfer.busy && !["cancelMusicTransfer", "cancelAlbumTransfer", "cancelAgpsUpdate", "cancelWatchfaceTransfer", "isConnected", "disconnect", "destroy"].contains(call.method) {
       result(FlutterError(code: "BUSY", message: "请先完成或取消文件推送", details: nil))
       return
     }
@@ -63,8 +63,10 @@ private final class HwBleBridgeImpl: NSObject {
       }
       ota.handle(call, result: result)
     case "getMusicStorage", "pickMusicFiles", "pushMusicSifli", "cancelMusicTransfer",
-         "getAlbumFileIds", "pickAlbumImages", "pushAlbumSifli", "cancelAlbumTransfer", "getDeviceGpsStatus", "updateAgps", "cancelAgpsUpdate":
-      if ["pushMusicSifli", "pushAlbumSifli", "updateAgps"].contains(call.method) && (jlHealthBusy || notificationContactsBusy) {
+         "getAlbumFileIds", "pickAlbumImages", "pushAlbumSifli", "cancelAlbumTransfer", "getDeviceGpsStatus", "updateAgps", "cancelAgpsUpdate",
+         "getOnlineWatchfaces", "installOnlineWatchface", "cancelWatchfaceTransfer",
+         "pickCustomWatchfaceBackground", "previewCustomWatchface", "pushCustomWatchface":
+      if ["pushMusicSifli", "pushAlbumSifli", "updateAgps", "getOnlineWatchfaces", "installOnlineWatchface", "pushCustomWatchface"].contains(call.method) && (jlHealthBusy || notificationContactsBusy) {
         result(FlutterError(code: "BUSY", message: "请等待设备操作完成", details: nil))
         return
       }

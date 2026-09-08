@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:sdkdemo/sdk/models/ble_notification_contact.dart';
 
 import 'package:flutter/services.dart';
@@ -129,6 +130,33 @@ class HwBleSdk {
   Future<void> cancelOta() => _method.invokeMethod<void>('cancelOta');
   Stream<Map<String, dynamic>> otaEvents() =>
       const EventChannel('sdkdemo/hw_ble/ota').receiveBroadcastStream().map(
+        (event) => Map<String, dynamic>.from(event as Map),
+      );
+
+  Future<List<Map<String, dynamic>>> getOnlineWatchfaces() async {
+    final rows = await _method.invokeListMethod<dynamic>('getOnlineWatchfaces');
+    if (rows == null) throw StateError('未返回在线表盘列表');
+    return rows.map((row) => Map<String, dynamic>.from(row as Map)).toList();
+  }
+  Future<void> installOnlineWatchface(String id) =>
+      _method.invokeMethod<void>('installOnlineWatchface', {'id': id});
+  Future<void> cancelWatchfaceTransfer() => _method.invokeMethod<void>('cancelWatchfaceTransfer');
+  Stream<Map<String, dynamic>> watchfaceTransferEvents() =>
+      const EventChannel('sdkdemo/hw_ble/watchface').receiveBroadcastStream().map(
+        (event) => Map<String, dynamic>.from(event as Map),
+      );
+
+  Future<Uint8List?> pickCustomWatchfaceBackground() =>
+      _method.invokeMethod<Uint8List>('pickCustomWatchfaceBackground');
+  Future<Uint8List> previewCustomWatchface(Map<String, dynamic> config) async {
+    final png = await _method.invokeMethod<Uint8List>('previewCustomWatchface', config);
+    if (png == null) throw StateError('未返回表盘预览');
+    return png;
+  }
+  Future<void> pushCustomWatchface(Map<String, dynamic> config) =>
+      _method.invokeMethod<void>('pushCustomWatchface', config);
+  Stream<Map<String, dynamic>> customWatchfaceEvents() =>
+      const EventChannel('sdkdemo/hw_ble/customWatchface').receiveBroadcastStream().map(
         (event) => Map<String, dynamic>.from(event as Map),
       );
 

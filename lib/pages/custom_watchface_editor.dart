@@ -1,0 +1,350 @@
+import 'dart:async';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:sdkdemo/sdk/sdk.dart';
+
+class CustomWatchfaceEditor extends StatefulWidget {
+  const CustomWatchfaceEditor({
+    super.key,
+    required this.active,
+    required this.onBusyChanged,
+  });
+  final bool active;
+  final ValueChanged<bool> onBusyChanged;
+  @override
+  State<CustomWatchfaceEditor> createState() => _CustomWatchfaceEditorState();
+}
+
+class _CustomWatchfaceEditorState extends State<CustomWatchfaceEditor> {
+  final _sdk = HwBleSdk.instance;
+  final _fields = <String, TextEditingController>{
+    'name': TextEditingController(text: 'custom'),
+    'width': TextEditingController(text: '466'),
+    'height': TextEditingController(text: '466'),
+    'corner': TextEditingController(text: '233'),
+    'thumbWidth': TextEditingController(text: '264'),
+    'thumbHeight': TextEditingController(text: '264'),
+    'thumbCorner': TextEditingController(text: '132'),
+  };
+  final _widgets = {
+    'date': true,
+    'week': true,
+    'step': false,
+    'weather': false,
+    'pointer': false,
+  };
+  Uint8List? _background, _preview;
+  Timer? _debounce;
+  StreamSubscription<Map<String, dynamic>>? _events;
+  int _revision = 0;
+  bool _busy = false, _pushing = false, _cancelling = false, _dirty = true;
+  double _progress = 0;
+  String _status = '就绪';
+  final _logs = <String>[];
+  bool get _supported => defaultTargetPlatform == TargetPlatform.iOS;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_supported) return;
+    _events = _sdk.customWatchfaceEvents().listen(
+      (event) {
+        if (!mounted || !_pushing) return;
+        if (!['preparing', 'transferring'].contains(event['phase'])) return;
+        setState(() {
+          _progress = (event['progress'] as num).toDouble().clamp(0, 1);
+          _status = event['phase'] == 'preparing' ? '正在生成表盘…' : '正在推送表盘…';
+        });
+      },
+      onError: (Object error) {
+        if (mounted) setState(() => _logs.add('进度监听失败：${_error(error)}'));
+      },
+    );
+    if (widget.active) _schedulePreview();
+  }
+
+  @override
+  void didUpdateWidget(covariant CustomWatchfaceEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !oldWidget.active) _schedulePreview();
+    if (!widget.active) {
+      _debounce?.cancel();
+      _revision++;
+    }
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _events?.cancel();
+    for (final field in _fields.values) {
+      field.dispose();
+    }
+    super.dispose();
+  }
+
+  String _error(Object error) => error is MissingPluginException
+      ? '接口未加载，请停止 App 后重新运行'
+      : error is PlatformException
+      ? error.message ?? error.code
+      : '$error';
+  Map<String, dynamic> _config() => {
+    for (final entry in _fields.entries)
+      entry.key: entry.key == 'name'
+          ? entry.value.text.trim()
+          : int.tryParse(entry.value.text.trim()) ?? -1,
+    ..._widgets,
+    if (_background != null) 'background': _background,
+  };
+  void _schedulePreview() {
+    if (!_supported || !widget.active || _busy) return;
+    _debounce?.cancel();
+    final revision = ++_revision;
+    _dirty = true;
+    _debounce = Timer(const Duration(milliseconds: 250), () async {
+      try {
+        final png = await _sdk.previewCustomWatchface(_config());
+        if (mounted && revision == _revision)
+          setState(() {
+            _preview = png;
+            _dirty = false;
+            _status = '就绪';
+          });
+      } catch (error) {
+        if (mounted && revision == _revision)
+          setState(() {
+            _preview = null;
+            _status = _error(error);
+          });
+      }
+    });
+  }
+
+  void _setBusy(bool value) {
+    setState(() => _busy = value);
+    widget.onBusyChanged(value);
+  }
+
+  Future<void> _pick() async {
+    if (_busy) return;
+    _debounce?.cancel();
+    _revision++;
+    _setBusy(true);
+    try {
+      final image = await _sdk.pickCustomWatchfaceBackground();
+      if (mounted && image != null) setState(() => _background = image);
+    } catch (error) {
+      if (mounted) setState(() => _logs.add(_error(error)));
+    } finally {
+      if (mounted) {
+        _setBusy(false);
+        _schedulePreview();
+      }
+    }
+  }
+
+  void _preset(int index) {
+    const sizes = [
+      [466, 466, 233, 264, 264, 132],
+      [480, 480, 240, 264, 264, 132],
+      [410, 502, 108, 200, 244, 50],
+    ];
+    const keys = [
+      'width',
+      'height',
+      'corner',
+      'thumbWidth',
+      'thumbHeight',
+      'thumbCorner',
+    ];
+    setState(() {
+      for (var i = 0; i < keys.length; i++) {
+        _fields[keys[i]]!.text = '${sizes[index][i]}';
+      }
+      _schedulePreview();
+    });
+  }
+
+  Future<void> _push() async {
+    if (_busy || _dirty || !_supported) return;
+    FocusScope.of(context).unfocus();
+    _debounce?.cancel();
+    _revision++;
+    _setBusy(true);
+    setState(() {
+      _pushing = true;
+      _progress = 0;
+      _status = '正在生成表盘…';
+    });
+    try {
+      await _sdk.pushCustomWatchface(_config());
+      if (mounted)
+        setState(() {
+          _pushing = false;
+          _progress = 1;
+          _status = '自定义表盘推送成功';
+          _logs.add('推送成功');
+        });
+    } catch (error) {
+      if (mounted)
+        setState(() {
+          _status = error is PlatformException && error.code == 'CANCELLED'
+              ? '已取消推送'
+              : '自定义表盘推送失败';
+          _logs.add(_error(error));
+        });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pushing = _cancelling = false;
+        });
+        _setBusy(false);
+      }
+    }
+  }
+
+  Future<void> _cancel() async {
+    if (!_pushing || _cancelling) return;
+    setState(() => _cancelling = true);
+    try {
+      await _sdk.cancelWatchfaceTransfer();
+    } catch (error) {
+      if (mounted)
+        setState(() {
+          _cancelling = false;
+          _logs.add('取消失败：${_error(error)}');
+        });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget field(String key, String label) => Expanded(
+      child: TextField(
+        key: ValueKey('custom_$key'),
+        controller: _fields[key],
+        enabled: !_busy && _supported,
+        keyboardType: key == 'name' ? TextInputType.text : TextInputType.number,
+        inputFormatters: key == 'name'
+            ? null
+            : [FilteringTextInputFormatter.digitsOnly],
+        decoration: InputDecoration(
+          labelText: label,
+          isDense: true,
+          border: const OutlineInputBorder(),
+        ),
+        onChanged: (_) => setState(_schedulePreview),
+      ),
+    );
+    Widget row(String a, String al, String b, String bl) =>
+        Row(children: [field(a, al), const SizedBox(width: 8), field(b, bl)]);
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      children: [
+        Text(_supported ? _status : '当前仅支持 iOS 思澈设备'),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 220,
+          child: _preview == null
+              ? const Center(child: Icon(Icons.watch_outlined, size: 64))
+              : Image.memory(
+                  _preview!,
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
+                ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final (index, label) in [
+              '466×466',
+              '480×480',
+              '410×502',
+            ].indexed)
+              OutlinedButton(
+                onPressed: _busy || !_supported ? null : () => _preset(index),
+                child: Text(label),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        row('width', '宽度', 'height', '高度'),
+        const SizedBox(height: 10),
+        row('corner', '圆角', 'name', '表盘名称'),
+        const SizedBox(height: 10),
+        row('thumbWidth', '缩略图宽度', 'thumbHeight', '缩略图高度'),
+        const SizedBox(height: 10),
+        Row(children: [field('thumbCorner', '缩略图圆角'), const Spacer()]),
+        const SizedBox(height: 6),
+        for (final entry in {
+          'date': '日期',
+          'week': '星期',
+          'step': '步数',
+          'weather': '天气',
+          'pointer': '指针',
+        }.entries)
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: Text(entry.value),
+            value: _widgets[entry.key]!,
+            onChanged: _busy || !_supported
+                ? null
+                : (value) => setState(() {
+                    _widgets[entry.key] = value;
+                    _schedulePreview();
+                  }),
+          ),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.tonal(
+                onPressed: _busy || !_supported ? null : _pick,
+                child: const Text('选择背景图'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton.tonal(
+                onPressed: _busy || _background == null
+                    ? null
+                    : () => setState(() {
+                        _background = null;
+                        _schedulePreview();
+                      }),
+                child: const Text('清除背景'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        FilledButton(
+          onPressed: _busy || _dirty || !_supported ? null : _push,
+          child: const Text('推送自定义表盘'),
+        ),
+        if (_pushing) ...[
+          LinearProgressIndicator(value: _progress),
+          Text('${(_progress * 100).toStringAsFixed(0)}%'),
+          TextButton(
+            onPressed: _cancelling ? null : _cancel,
+            child: Text(_cancelling ? '正在取消…' : '取消推送'),
+          ),
+        ],
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(10),
+          constraints: const BoxConstraints(minHeight: 100),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: SelectableText(_logs.isEmpty ? '暂无日志' : _logs.join('\n')),
+        ),
+      ],
+    );
+  }
+}

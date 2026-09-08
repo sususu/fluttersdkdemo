@@ -9,6 +9,7 @@ import 'package:sdkdemo/pages/music_transfer_page.dart';
 import 'package:sdkdemo/pages/album_transfer_page.dart';
 import 'package:sdkdemo/pages/agps_update_page.dart';
 import 'package:sdkdemo/pages/ota_upgrade_page.dart';
+import 'package:sdkdemo/pages/watchface_page.dart';
 import 'package:sdkdemo/pages/bind_flow_sheet.dart';
 import 'package:sdkdemo/pages/goals_page.dart';
 import 'package:sdkdemo/pages/jieli_health_page.dart';
@@ -696,6 +697,19 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 20),
                 section('设备功能', [
                   buttons([
+                    action(
+                      '表盘',
+                      Icons.watch_outlined,
+                      _busy
+                          ? null
+                          : () {
+                              Navigator.of(context).push<void>(
+                                MaterialPageRoute(
+                                  builder: (_) => const WatchfacePage(),
+                                ),
+                              );
+                            },
+                    ),
                     action(
                       'OTA 升级',
                       Icons.system_update_alt,
