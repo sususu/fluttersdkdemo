@@ -23,3 +23,5 @@ export 'models/ble_user_info.dart';
 export 'models/bind_type.dart';
 export 'hw_ble_events.dart';
 export 'hw_ble_sdk.dart';
+
+export 'models/ble_notification_contact.dart';

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:sdkdemo/sdk/models/ble_notification_contact.dart';
 
 import 'package:flutter/services.dart';
 import 'package:sdkdemo/sdk/hw_ble_events.dart';
@@ -32,6 +33,28 @@ class HwBleSdk {
   static const _scanEvents = EventChannel('sdkdemo/hw_ble/scan');
   static const _connectionEvents = EventChannel('sdkdemo/hw_ble/connection');
 
+  Future<List<BleNotificationSwitch>> getSocialSwitches() async {
+    final rows = await _method.invokeMethod<List<dynamic>>('getSocialSwitches');
+    if (rows == null) throw StateError('未返回通知开关列表');
+    return rows
+        .map((row) => BleNotificationSwitch.fromMap(row as Map))
+        .toList();
+  }
+
+  Future<void> setSocialSwitch(int type, bool enabled) =>
+      _method.invokeMethod<void>('setSocialSwitch', {
+        'type': type,
+        'enabled': enabled,
+      });
+
+  Future<void> setContacts(List<BleContact> contacts) =>
+      _method.invokeMethod<void>('setContacts', {
+        'contacts': contacts.map((c) => c.toMap()).toList(),
+      });
+
+  Future<void> setEmergencyContact(BleContact contact) =>
+      _method.invokeMethod<void>('setEmergencyContact', contact.toMap());
+
   Future<void> init({int maxMtu = 247}) async {
     await _method.invokeMethod<void>('init', {'maxMtu': maxMtu});
   }
@@ -53,9 +76,7 @@ class HwBleSdk {
         case 'scanStarted':
           return BleScanStarted(map['success'] as bool? ?? false);
         case 'scanResult':
-          return BleScanResult(
-            BleDevice.fromMap(map['device'] as Map),
-          );
+          return BleScanResult(BleDevice.fromMap(map['device'] as Map));
         case 'scanFinished':
           final devices = (map['devices'] as List<dynamic>? ?? [])
               .map((e) => BleDevice.fromMap(e as Map))
@@ -142,11 +163,10 @@ class HwBleSdk {
   Future<void> setBtSwitchWithAutoConnect({
     required bool on,
     required bool autoConnect,
-  }) =>
-      _method.invokeMethod<void>('setBtSwitchWithAutoConnect', {
-        'on': on,
-        'autoConnect': autoConnect,
-      });
+  }) => _method.invokeMethod<void>('setBtSwitchWithAutoConnect', {
+    'on': on,
+    'autoConnect': autoConnect,
+  });
 
   Future<void> unbindDevice() => _method.invokeMethod<void>('unbindDevice');
 
@@ -156,11 +176,10 @@ class HwBleSdk {
   Future<void> setDeviceTime({
     required DateTime time,
     required bool use24HourFormat,
-  }) =>
-      _method.invokeMethod<void>('setDeviceTime', {
-        'timeMs': time.millisecondsSinceEpoch,
-        'use24HourFormat': use24HourFormat ? 1 : 0,
-      });
+  }) => _method.invokeMethod<void>('setDeviceTime', {
+    'timeMs': time.millisecondsSinceEpoch,
+    'use24HourFormat': use24HourFormat ? 1 : 0,
+  });
 
   Future<void> setUserInfo(BleUserInfo userInfo) =>
       _method.invokeMethod<void>('setUserInfo', userInfo.toMap());
@@ -172,8 +191,9 @@ class HwBleSdk {
       _method.invokeMethod<void>('setLanguage', {'language': languageCode});
 
   Future<BleDeviceInfo> getDeviceInfo() async {
-    final map =
-        await _method.invokeMethod<Map<dynamic, dynamic>>('getDeviceInfo');
+    final map = await _method.invokeMethod<Map<dynamic, dynamic>>(
+      'getDeviceInfo',
+    );
     return BleDeviceInfo.fromMap(map ?? {});
   }
 
@@ -183,13 +203,14 @@ class HwBleSdk {
   }
 
   Future<BleHealthDataCount> getHealthDataCount() async {
-    final map =
-        await _method.invokeMethod<Map<dynamic, dynamic>>('getHealthDataCount');
+    final map = await _method.invokeMethod<Map<dynamic, dynamic>>(
+      'getHealthDataCount',
+    );
     return BleHealthDataCount.fromMap(map ?? {});
   }
 
-  Future<void> setGoal(BleGoalType type, int value) =>
-      _method.invokeMethod<void>('setGoal', {'type': type.value, 'value': value});
+  Future<void> setGoal(BleGoalType type, int value) => _method
+      .invokeMethod<void>('setGoal', {'type': type.value, 'value': value});
 
   Future<BleGoal> getGoals() async {
     final map = await _method.invokeMethod<Map<dynamic, dynamic>>('getGoals');
@@ -204,8 +225,7 @@ class HwBleSdk {
     return (list ?? []).map((e) => BleAlarm.fromMap(e as Map)).toList();
   }
 
-  Future<void> addDemoAlarm() =>
-      _method.invokeMethod<void>('addDemoAlarm');
+  Future<void> addDemoAlarm() => _method.invokeMethod<void>('addDemoAlarm');
 
   Future<int> addJlDemoAlarm() async {
     final alarmId = await _method.invokeMethod<int>('addJlDemoAlarm');
@@ -249,18 +269,14 @@ class HwBleSdk {
     final list = await _method.invokeMethod<List<dynamic>>('getActivities', {
       'activityCount': activityCount,
     });
-    return (list ?? [])
-        .map((e) => BleActivity.fromMap(e as Map))
-        .toList();
+    return (list ?? []).map((e) => BleActivity.fromMap(e as Map)).toList();
   }
 
   Future<void> deleteSports() => _method.invokeMethod<void>('deleteSports');
 
   Future<List<BleHeartrate>> getHeartrates() async {
     final list = await _method.invokeMethod<List<dynamic>>('getHeartrates');
-    return (list ?? [])
-        .map((e) => BleHeartrate.fromMap(e as Map))
-        .toList();
+    return (list ?? []).map((e) => BleHeartrate.fromMap(e as Map)).toList();
   }
 
   Future<void> deleteHeartrates() =>
@@ -274,9 +290,7 @@ class HwBleSdk {
   Future<List<BleActivity>> getActivitiesV2() async {
     final list = await _method.invokeMethod<List<dynamic>>('getActivitiesV2');
     if (list == null) throw StateError('getActivitiesV2 returned empty result');
-    return list
-        .map((e) => BleActivity.fromMap(e as Map))
-        .toList();
+    return list.map((e) => BleActivity.fromMap(e as Map)).toList();
   }
 
   Future<List<BleSleep>> getSleepsV2() async {
@@ -287,9 +301,7 @@ class HwBleSdk {
   Future<List<BleHeartrate>> getHeartratesV2() async {
     final list = await _method.invokeMethod<List<dynamic>>('getHeartratesV2');
     if (list == null) throw StateError('getHeartratesV2 returned empty result');
-    return list
-        .map((e) => BleHeartrate.fromMap(e as Map))
-        .toList();
+    return list.map((e) => BleHeartrate.fromMap(e as Map)).toList();
   }
 
   Future<List<BleSpo2>> getSpo2sV2() async {
@@ -307,7 +319,8 @@ class HwBleSdk {
   /// Jieli sleep points; getSleepsV2 remains the Android summary API.
   Future<List<BleSleepPoint>> getSleepPointsV2() async {
     final list = await _method.invokeMethod<List<dynamic>>('getSleepPointsV2');
-    if (list == null) throw StateError('getSleepPointsV2 returned empty result');
+    if (list == null)
+      throw StateError('getSleepPointsV2 returned empty result');
     return list.map((e) => BleSleepPoint.fromMap(e as Map)).toList();
   }
 

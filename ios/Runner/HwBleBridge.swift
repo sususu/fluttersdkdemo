@@ -62,6 +62,8 @@ private final class HwBleBridgeImpl: NSObject {
         connectionCallbackRegistered = false
       }
       result(nil)
+    case "getSocialSwitches", "setSocialSwitch", "setContacts", "setEmergencyContact":
+      handleNotificationsAndContacts(call, result: result)
     case "getVersion":
       result(sdk.version())
     case "stopScan":
@@ -227,6 +229,82 @@ private final class HwBleBridgeImpl: NSObject {
       handleGetSleeps(result: result)
     default:
       result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private var notificationContactsBusy = false
+
+  private func handleNotificationsAndContacts(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard sdk.connected() else {
+      result(FlutterError(code: "13", message: "设备未连接", details: nil))
+      return
+    }
+    guard !notificationContactsBusy else {
+      result(FlutterError(code: "BUSY", message: "通知或通讯录操作进行中", details: nil))
+      return
+    }
+    let args = call.arguments as? [String: Any] ?? [:]
+    func invalid(_ message: String) {
+      result(FlutterError(code: "INVALID_ARGUMENT", message: message, details: nil))
+    }
+    let complete: HwBoolCallback = { success, error in
+      DispatchQueue.main.async {
+        self.notificationContactsBusy = false
+        self.boolResult(success: success, error: error, result: result)
+      }
+    }
+    if call.method == "getSocialSwitches" {
+      notificationContactsBusy = true
+      sdk.getSocialSwitches { list, error in
+        DispatchQueue.main.async {
+          self.notificationContactsBusy = false
+          if let error = error { result(self.flutterError(error)); return }
+          guard let switches = list as? [HwSocialSwitch] else {
+            result(FlutterError(code: "EMPTY_RESULT", message: "未返回有效通知开关列表", details: nil))
+            return
+          }
+          result(switches.map { ["type": $0.type.rawValue, "enabled": $0.s] as [String: Any] })
+        }
+      }
+    } else if call.method == "setSocialSwitch" {
+      guard let raw = args["type"] as? Int, (0...255).contains(raw),
+            let type = HwSocialSwitchType(rawValue: raw), let enabled = args["enabled"] as? Bool else {
+        invalid("通知类型或开关无效"); return
+      }
+      notificationContactsBusy = true
+      sdk.setSocialSwitchWith(type, s: enabled, callback: complete)
+    } else {
+      let rows: [[String: Any]]
+      if call.method == "setContacts" {
+        guard let contacts = args["contacts"] as? [[String: Any]], (1...255).contains(contacts.count) else {
+          invalid("联系人数量须为 1–255；设备实际容量以手表为准"); return
+        }
+        rows = contacts
+      } else {
+        rows = [args]
+      }
+      var contacts: [HwContact] = []
+      for row in rows {
+        let name = (row["name"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let phone = (row["phone"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let phoneLimit = call.method == "setContacts" ? 24 : 20
+        guard !name.isEmpty, name.utf8.count <= 60, !phone.isEmpty,
+              phone.utf8.count <= phoneLimit,
+              phone.range(of: "^[+0-9*# ()-]+$", options: .regularExpression) != nil,
+              phone.rangeOfCharacter(from: .decimalDigits) != nil else {
+          invalid("姓名最多 60 UTF-8 字节，电话号码最多 \(phoneLimit) 字节且须包含数字"); return
+        }
+        let contact = HwContact()
+        contact.contactName = name
+        contact.contactPhone = phone
+        contacts.append(contact)
+      }
+      notificationContactsBusy = true
+      if call.method == "setContacts" {
+        sdk.setContacts(contacts, callback: complete)
+      } else {
+        sdk.setSosName(contacts[0].contactName, phoneNumber: contacts[0].contactPhone, callback: complete)
+      }
     }
   }
 

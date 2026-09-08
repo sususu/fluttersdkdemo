@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:sdkdemo/bound_device_store.dart';
 import 'package:sdkdemo/pages/alarms_page.dart';
+import 'package:sdkdemo/pages/notifications_contacts_page.dart';
 import 'package:sdkdemo/pages/bind_flow_sheet.dart';
 import 'package:sdkdemo/pages/goals_page.dart';
 import 'package:sdkdemo/pages/jieli_health_page.dart';
@@ -558,6 +559,61 @@ class _HomePageState extends State<HomePage> {
     final canSync = !_busy && (_bound || _phase == DevicePhase.connected);
     final canUnbind = !_busy && _bound;
 
+    final buttonStyle = FilledButton.styleFrom(
+      minimumSize: const Size.fromHeight(48),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+    );
+    Widget action(String title, IconData icon, VoidCallback? onPressed) =>
+        FilledButton.tonalIcon(
+          style: buttonStyle.copyWith(
+            backgroundColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.disabled)
+                  ? null
+                  : theme.colorScheme.surfaceContainerLow,
+            ),
+            foregroundColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.disabled)
+                  ? null
+                  : theme.colorScheme.onSurface,
+            ),
+          ),
+          onPressed: onPressed,
+          icon: Icon(icon, size: 20),
+          label: Text(title, textAlign: TextAlign.center),
+        );
+    Widget buttons(List<Widget> children) => LayoutBuilder(
+      builder: (context, constraints) {
+        final singleColumn =
+            constraints.maxWidth < 340 ||
+            MediaQuery.textScalerOf(context).scale(14) > 18;
+        final width = singleColumn
+            ? constraints.maxWidth
+            : (constraints.maxWidth - 8) / 2;
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final child in children) SizedBox(width: width, child: child),
+          ],
+        );
+      },
+    );
+    Widget section(String title, List<Widget> children) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 10),
+        ...children,
+      ],
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('手表 SDK Demo'),
@@ -581,113 +637,85 @@ class _HomePageState extends State<HomePage> {
           if (_device != null)
             _CurrentDeviceCard(device: _device!, bound: _bound),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                FilledButton.icon(
-                  onPressed: _busy ? null : _openScanPage,
-                  icon: const Icon(Icons.bluetooth_searching),
-                  label: const Text('扫描并连接设备'),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: canBind ? _bind : null,
-                        icon: const Icon(Icons.link),
-                        label: const Text('绑定手表'),
+                section('设备连接', [
+                  FilledButton.icon(
+                    style: buttonStyle,
+                    onPressed: _busy ? null : _openScanPage,
+                    icon: const Icon(Icons.bluetooth_searching, size: 20),
+                    label: const Text('扫描并连接设备'),
+                  ),
+                  const SizedBox(height: 8),
+                  buttons([
+                    action('绑定手表', Icons.link, canBind ? _bind : null),
+                    TextButton.icon(
+                      style: buttonStyle.copyWith(
+                        backgroundColor: WidgetStatePropertyAll(
+                          theme.colorScheme.surfaceContainerLow,
+                        ),
                       ),
+                      onPressed: _busy || _device == null ? null : _disconnect,
+                      icon: const Icon(Icons.bluetooth_disabled, size: 20),
+                      label: const Text('断开连接'),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: canSync ? _sync : null,
-                        icon: const Icon(Icons.sync),
-                        label: const Text('同步数据'),
-                      ),
+                    action('解绑手表', Icons.link_off, canUnbind ? _unbind : null),
+                  ]),
+                ]),
+                const SizedBox(height: 20),
+                section('数据同步', [
+                  buttons([
+                    action('同步数据', Icons.sync, canSync ? _sync : null),
+                    action(
+                      '同步数据（杰理）',
+                      Icons.watch,
+                      !canSync
+                          ? null
+                          : () {
+                              if (Platform.isAndroid) {
+                                _syncJLHealthData();
+                              } else {
+                                Navigator.of(context).push<void>(
+                                  MaterialPageRoute(
+                                    builder: (_) => const JieliHealthPage(),
+                                  ),
+                                );
+                              }
+                            },
                     ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: !canSync
-                            ? null
-                            : () {
-                                if (Platform.isAndroid) {
-                                  _syncJLHealthData();
-                                } else {
-                                  Navigator.of(context).push<void>(
-                                    MaterialPageRoute(
-                                      builder: (_) => const JieliHealthPage(),
-                                    ),
-                                  );
-                                }
-                              },
-                        icon: const Icon(Icons.sync),
-                        label: const Text('同步数据（杰理）'),
-                      ),
+                  ]),
+                ]),
+                const SizedBox(height: 20),
+                section('设备功能', [
+                  buttons([
+                    action('目标设置', Icons.flag_outlined, () {
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute(builder: (_) => const GoalsPage()),
+                      );
+                    }),
+                    action('闹钟与提醒', Icons.alarm, () {
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute(builder: (_) => const AlarmsPage()),
+                      );
+                    }),
+                    action(
+                      '通知与通讯录',
+                      Icons.contacts_outlined,
+                      _busy
+                          ? null
+                          : () {
+                              Navigator.of(context).push<void>(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const NotificationsContactsPage(),
+                                ),
+                              );
+                            },
                     ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: canUnbind ? _unbind : null,
-                        icon: const Icon(Icons.link_off),
-                        label: const Text('解绑手表'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextButton(
-                        onPressed: _busy || _device == null
-                            ? null
-                            : _disconnect,
-                        child: const Text('断开连接'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text('设备功能'),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: () {
-                          Navigator.of(context).push<void>(
-                            MaterialPageRoute(
-                              builder: (_) => const GoalsPage(),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.data_object_rounded),
-                        label: const Text('目标设置'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: () {
-                          Navigator.of(context).push<void>(
-                            MaterialPageRoute(
-                              builder: (_) => const AlarmsPage(),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.notification_add_outlined),
-                        label: const Text('闹钟与提醒'),
-                      ),
-                    ),
-                  ],
-                ),
+                  ]),
+                ]),
               ],
             ),
           ),
@@ -715,7 +743,7 @@ class _HomePageState extends State<HomePage> {
           ListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             itemCount: _logs.length,
             itemBuilder: (context, index) => Text(
               _logs[index],
