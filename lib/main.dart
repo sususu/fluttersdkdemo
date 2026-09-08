@@ -136,6 +136,7 @@ class _HomePageState extends State<HomePage> {
   void _onConnectionEvent(BleConnectionEvent event) {
     switch (event) {
       case BleConnectedEvent(:final deviceName, :final macAddress):
+        if (_phase == DevicePhase.unbinding) return;
         _reconnectTimer?.cancel();
         _reconnecting = false;
         setState(() {
@@ -175,6 +176,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _disableAutoReconnect() async {
+    _manualDisconnect = true;
     _reconnectTimer?.cancel();
     _reconnecting = false;
     _log('已停止自动重连');
@@ -200,6 +202,7 @@ class _HomePageState extends State<HomePage> {
       if (await _sdk.isConnected()) return;
     } catch (_) {}
 
+    if (!mounted || !_bound || _manualDisconnect || _busy) return;
     _reconnecting = true;
     if (mounted) {
       setState(() => _status = '重连中（$reason）…');
@@ -212,7 +215,7 @@ class _HomePageState extends State<HomePage> {
         bleName: device.name,
         timeoutSeconds: 30,
       );
-      if (!mounted) return;
+      if (!mounted || _manualDisconnect || !_bound) return;
       setState(() {
         _phase = DevicePhase.bound;
         _status = '已重连 ${device.name ?? device.macAddress}';
@@ -423,10 +426,7 @@ class _HomePageState extends State<HomePage> {
         }
       }
 
-      final activities = await load<BleActivity>(
-        'STEP',
-        _sdk.getActivitiesV2,
-      );
+      final activities = await load<BleActivity>('STEP', _sdk.getActivitiesV2);
       if (activities != null) _wlActivities = activities;
 
       final sleeps = await load<BleSleep>('SLEEP', _sdk.getSleepsV2);
@@ -441,10 +441,7 @@ class _HomePageState extends State<HomePage> {
       final spo2s = await load<BleSpo2>('SPO2', _sdk.getSpo2sV2);
       if (spo2s != null) _wlSpo2s = spo2s;
 
-      final stresses = await load<BleStress>(
-        'STRESS',
-        _sdk.getStressesV2,
-      );
+      final stresses = await load<BleStress>('STRESS', _sdk.getStressesV2);
       if (stresses != null) _wlStresses = stresses;
 
       final hrvs = await load<BleHrv>('HRV', _sdk.getHrvsV2);
@@ -526,25 +523,31 @@ class _HomePageState extends State<HomePage> {
         _status = ok == false ? '解绑未完成' : '已取消解绑';
         _busy = false;
       });
-      _log('解绑未完成');
-      if (_device != null) {
-        await _enableAutoReconnect(_device!);
-      }
+      _log('解绑未完成，保持停止自动重连，请处理错误后重试');
     }
   }
 
   Future<void> _disconnect() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _status = '正在断开…';
+    });
     try {
-      _manualDisconnect = true;
       await _disableAutoReconnect();
       await _sdk.disconnect();
+      if (!mounted) return;
       setState(() {
         _phase = _bound ? DevicePhase.bound : DevicePhase.idle;
         _status = _bound ? '已绑定（已手动断开）' : '已断开连接';
       });
-      _log('已手动断开连接（不会自动重连）');
+      _log('已手动断开连接（保留绑定，不会自动重连）');
     } catch (e) {
+      if (!mounted) return;
+      setState(() => _status = '断开失败: $e');
       _log('断开失败: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -619,14 +622,16 @@ class _HomePageState extends State<HomePage> {
                                   _syncJLHealthData();
                                 } else {
                                   Navigator.of(context).push<void>(
-                                    MaterialPageRoute(builder: (_) => const JieliHealthPage()),
+                                    MaterialPageRoute(
+                                      builder: (_) => const JieliHealthPage(),
+                                    ),
                                   );
                                 }
                               },
                         icon: const Icon(Icons.sync),
                         label: const Text('同步数据（杰理）'),
                       ),
-                    )
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -658,7 +663,9 @@ class _HomePageState extends State<HomePage> {
                       child: FilledButton.tonalIcon(
                         onPressed: () {
                           Navigator.of(context).push<void>(
-                            MaterialPageRoute(builder: (_) => const GoalsPage()),
+                            MaterialPageRoute(
+                              builder: (_) => const GoalsPage(),
+                            ),
                           );
                         },
                         icon: const Icon(Icons.data_object_rounded),
@@ -670,7 +677,9 @@ class _HomePageState extends State<HomePage> {
                       child: FilledButton.tonalIcon(
                         onPressed: () {
                           Navigator.of(context).push<void>(
-                            MaterialPageRoute(builder: (_) => const AlarmsPage()),
+                            MaterialPageRoute(
+                              builder: (_) => const AlarmsPage(),
+                            ),
                           );
                         },
                         icon: const Icon(Icons.notification_add_outlined),

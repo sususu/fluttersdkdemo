@@ -52,9 +52,7 @@ class BoundDeviceStore {
   }
 
   static Future<void> clear() async {
-    try {
-      await _channel.invokeMethod<void>('clear');
-    } catch (_) {}
+    await _channel.invokeMethod<void>('clear');
   }
 
   /// 供其它业务读取已缓存的设备信息。
