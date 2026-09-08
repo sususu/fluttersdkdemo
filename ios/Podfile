@@ -30,6 +30,7 @@ target 'Runner' do
 
   # Local vendored HwBluetoothSDK (ios/HwBluetoothSDK.podspec).
   pod 'HwBluetoothSDK', :path => '.'
+  pod 'WatchfaceSDK', :git => 'https://github.com/HWdan/WatchfaceSDK.git', :commit => '4ddc2f1d7b007233306c2244752a7c5fa6c275b1'
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
     inherit! :search_paths
@@ -40,7 +41,8 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
     target.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'YES' if target.name == 'Zip'
       config.build_settings['OTHER_LDFLAGS'] ||= ['$(inherited)']
       unless config.build_settings['OTHER_LDFLAGS'].include?('-ObjC')
         config.build_settings['OTHER_LDFLAGS'] << '-ObjC'

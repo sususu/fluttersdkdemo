@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:sdkdemo/bound_device_store.dart';
 import 'package:sdkdemo/pages/alarms_page.dart';
 import 'package:sdkdemo/pages/notifications_contacts_page.dart';
+import 'package:sdkdemo/pages/music_transfer_page.dart';
 import 'package:sdkdemo/pages/bind_flow_sheet.dart';
 import 'package:sdkdemo/pages/goals_page.dart';
 import 'package:sdkdemo/pages/jieli_health_page.dart';
@@ -690,6 +691,19 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 20),
                 section('设备功能', [
                   buttons([
+                    action(
+                      '音乐推送',
+                      Icons.music_note_outlined,
+                      _busy
+                          ? null
+                          : () {
+                              Navigator.of(context).push<void>(
+                                MaterialPageRoute(
+                                  builder: (_) => const MusicTransferPage(),
+                                ),
+                              );
+                            },
+                    ),
                     action('目标设置', Icons.flag_outlined, () {
                       Navigator.of(context).push<void>(
                         MaterialPageRoute(builder: (_) => const GoalsPage()),

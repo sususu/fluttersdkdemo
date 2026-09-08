@@ -1,21 +1,47 @@
 PODS:
   - Flutter (1.0.0)
   - HwBluetoothSDK (3.2.10)
+  - Masonry (1.1.0)
+  - SSZipArchive (2.4.3)
+  - WatchfaceSDK (1.0.6):
+    - Masonry
+    - SSZipArchive
+    - Zip (~> 2.1)
+  - Zip (2.1.2)
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
   - HwBluetoothSDK (from `.`)
+  - WatchfaceSDK (from `https://github.com/HWdan/WatchfaceSDK.git`, commit `4ddc2f1d7b007233306c2244752a7c5fa6c275b1`)
+
+SPEC REPOS:
+  trunk:
+    - Masonry
+    - SSZipArchive
+    - Zip
 
 EXTERNAL SOURCES:
   Flutter:
     :path: Flutter
   HwBluetoothSDK:
     :path: "."
+  WatchfaceSDK:
+    :commit: 4ddc2f1d7b007233306c2244752a7c5fa6c275b1
+    :git: https://github.com/HWdan/WatchfaceSDK.git
+
+CHECKOUT OPTIONS:
+  WatchfaceSDK:
+    :commit: 4ddc2f1d7b007233306c2244752a7c5fa6c275b1
+    :git: https://github.com/HWdan/WatchfaceSDK.git
 
 SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   HwBluetoothSDK: 8aa5baa6ca76160670713d8c927b1f7af10ad5a3
+  Masonry: 678fab65091a9290e40e2832a55e7ab731aad201
+  SSZipArchive: fe6a26b2a54d5a0890f2567b5cc6de5caa600aef
+  WatchfaceSDK: 2e7f53ac19c9b0256e6256b5d096a98bacba5f0c
+  Zip: b3fef584b147b6e582b2256a9815c897d60ddc67
 
-PODFILE CHECKSUM: 39b00ab20c020238661a823c4466074d907beee4
+PODFILE CHECKSUM: 96815142ef57ab1b0d9c5919d859db0b547c1cc5
 
 COCOAPODS: 1.16.2

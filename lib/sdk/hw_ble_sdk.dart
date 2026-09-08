@@ -55,6 +55,31 @@ class HwBleSdk {
   Future<void> setEmergencyContact(BleContact contact) =>
       _method.invokeMethod<void>('setEmergencyContact', contact.toMap());
 
+  Future<Map<String, int>> getMusicStorage() async {
+    final data = await _method.invokeMapMethod<String, dynamic>(
+      'getMusicStorage',
+    );
+    if (data == null) throw StateError('未返回音乐容量');
+    return {
+      'availableKb': (data['availableKb'] as num).toInt(),
+      'totalKb': (data['totalKb'] as num).toInt(),
+    };
+  }
+
+  Future<List<Map<String, dynamic>>?> pickMusicFiles() async {
+    final rows = await _method.invokeListMethod<dynamic>('pickMusicFiles');
+    return rows?.map((row) => Map<String, dynamic>.from(row as Map)).toList();
+  }
+
+  Stream<Map<String, dynamic>> musicTransferEvents() =>
+      const EventChannel('sdkdemo/hw_ble/music').receiveBroadcastStream().map(
+        (event) => Map<String, dynamic>.from(event as Map),
+      );
+
+  Future<void> pushMusicSifli() => _method.invokeMethod<void>('pushMusicSifli');
+  Future<void> cancelMusicTransfer() =>
+      _method.invokeMethod<void>('cancelMusicTransfer');
+
   Future<void> init({int maxMtu = 247}) async {
     await _method.invokeMethod<void>('init', {'maxMtu': maxMtu});
   }
