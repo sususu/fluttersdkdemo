@@ -11,7 +11,7 @@ enum HwBleBridge {
 }
 
 private final class HwBleBridgeImpl: NSObject {
-  private let music = MusicTransferBridge()
+  private let fileTransfer = SifliTransferBridge()
   private var methodChannel: FlutterMethodChannel?
   private var scanEventSink: FlutterEventSink?
   private var connectionEventSink: FlutterEventSink?
@@ -29,7 +29,7 @@ private final class HwBleBridgeImpl: NSObject {
       self?.handle(call, result: result)
     }
     self.methodChannel = methodChannel
-    music.register(with: registrar)
+    fileTransfer.register(with: registrar)
 
     let scanChannel = FlutterEventChannel(
       name: "sdkdemo/hw_ble/scan",
@@ -47,17 +47,18 @@ private final class HwBleBridgeImpl: NSObject {
   private var sdk: HwBluetoothSDK { HwBluetoothSDK.sharedInstance() }
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-    if music.busy && !["cancelMusicTransfer", "isConnected", "disconnect", "destroy"].contains(call.method) {
-      result(FlutterError(code: "BUSY", message: "请先完成或取消音乐推送", details: nil))
+    if fileTransfer.busy && !["cancelMusicTransfer", "cancelAlbumTransfer", "isConnected", "disconnect", "destroy"].contains(call.method) {
+      result(FlutterError(code: "BUSY", message: "请先完成或取消文件推送", details: nil))
       return
     }
     switch call.method {
-    case "getMusicStorage", "pickMusicFiles", "pushMusicSifli", "cancelMusicTransfer":
-      if call.method == "pushMusicSifli" && (jlHealthBusy || notificationContactsBusy) {
+    case "getMusicStorage", "pickMusicFiles", "pushMusicSifli", "cancelMusicTransfer",
+         "getAlbumFileIds", "pickAlbumImages", "pushAlbumSifli", "cancelAlbumTransfer":
+      if ["pushMusicSifli", "pushAlbumSifli"].contains(call.method) && (jlHealthBusy || notificationContactsBusy) {
         result(FlutterError(code: "BUSY", message: "请等待设备操作完成", details: nil))
         return
       }
-      music.handle(call, result: result)
+      fileTransfer.handle(call, result: result)
     case "init":
       let args = call.arguments as? [String: Any]
       _ = args?["maxMtu"]
@@ -68,7 +69,7 @@ private final class HwBleBridgeImpl: NSObject {
       }
       result(nil)
     case "destroy":
-      music.cancel()
+      fileTransfer.cancel()
       if initialized {
         sdk.destroy()
         initialized = false
@@ -85,7 +86,7 @@ private final class HwBleBridgeImpl: NSObject {
     case "connect":
       handleConnect(call: call, result: result)
     case "disconnect":
-      music.cancel()
+      fileTransfer.cancel()
       sdk.disconnect { [weak self] error in
         guard let self = self else { return }
         if let error = error {
@@ -389,7 +390,7 @@ private final class HwBleBridgeImpl: NSObject {
   }
 
   private func emitConnectionEvent(connected: Bool) {
-    if !connected { DispatchQueue.main.async { self.music.disconnected() } }
+    if !connected { DispatchQueue.main.async { self.fileTransfer.disconnected() } }
     guard let sink = connectionEventSink else { return }
     var payload: [String: Any] = [
       "event": connected ? "connected" : "disconnected",

@@ -80,6 +80,28 @@ class HwBleSdk {
   Future<void> cancelMusicTransfer() =>
       _method.invokeMethod<void>('cancelMusicTransfer');
 
+  Future<List<int>> getAlbumFileIds() async {
+    final ids = await _method.invokeListMethod<dynamic>('getAlbumFileIds');
+    if (ids == null) throw StateError('未返回相册位置列表');
+    return ids.map((id) => (id as num).toInt()).toList();
+  }
+
+  Future<int?> pickAlbumImages() =>
+      _method.invokeMethod<int>('pickAlbumImages');
+
+  Stream<Map<String, dynamic>> albumTransferEvents() =>
+      const EventChannel('sdkdemo/hw_ble/album').receiveBroadcastStream().map(
+        (event) => Map<String, dynamic>.from(event as Map),
+      );
+
+  Future<void> pushAlbumSifli({required int width, required int height}) =>
+      _method.invokeMethod<void>('pushAlbumSifli', {
+        'width': width,
+        'height': height,
+      });
+  Future<void> cancelAlbumTransfer() =>
+      _method.invokeMethod<void>('cancelAlbumTransfer');
+
   Future<void> init({int maxMtu = 247}) async {
     await _method.invokeMethod<void>('init', {'maxMtu': maxMtu});
   }
