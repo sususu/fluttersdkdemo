@@ -7,6 +7,7 @@ import 'package:sdkdemo/pages/alarms_page.dart';
 import 'package:sdkdemo/pages/notifications_contacts_page.dart';
 import 'package:sdkdemo/pages/music_transfer_page.dart';
 import 'package:sdkdemo/pages/album_transfer_page.dart';
+import 'package:sdkdemo/pages/agps_update_page.dart';
 import 'package:sdkdemo/pages/bind_flow_sheet.dart';
 import 'package:sdkdemo/pages/goals_page.dart';
 import 'package:sdkdemo/pages/jieli_health_page.dart';
@@ -692,6 +693,19 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 20),
                 section('设备功能', [
                   buttons([
+                    action(
+                      'AGPS 更新',
+                      Icons.satellite_alt,
+                      _busy
+                          ? null
+                          : () {
+                              Navigator.of(context).push<void>(
+                                MaterialPageRoute(
+                                  builder: (_) => const AgpsUpdatePage(),
+                                ),
+                              );
+                            },
+                    ),
                     action(
                       '相册推送',
                       Icons.photo_library_outlined,

@@ -27,6 +27,8 @@ final class SifliTransferBridge: NSObject, UIDocumentPickerDelegate {
   private var selectedFiles: [URL] = []
   private let musicEvents = TransferEvents()
   private let albumEvents = TransferEvents()
+  private let agpsEvents = TransferEvents()
+  private var agpsDownload: URLSessionDataTask?
   private var activeKind = "music"
   private let preparationQueue = DispatchQueue(label: "sdkdemo.filePreparation", qos: .userInitiated)
   private var albumPickerResult: FlutterResult?
@@ -40,6 +42,8 @@ final class SifliTransferBridge: NSObject, UIDocumentPickerDelegate {
   var busy: Bool { session != nil }
 
   func register(with registrar: FlutterPluginRegistrar) {
+    FlutterEventChannel(name: "sdkdemo/hw_ble/agps", binaryMessenger: registrar.messenger())
+      .setStreamHandler(agpsEvents)
     presenter = registrar.viewController
     FlutterEventChannel(name: "sdkdemo/hw_ble/music", binaryMessenger: registrar.messenger())
       .setStreamHandler(musicEvents)
@@ -52,13 +56,34 @@ final class SifliTransferBridge: NSObject, UIDocumentPickerDelegate {
   }
 
   private func emit(_ phase: String, progress: Double = 0) {
-    let events = activeKind == "album" ? albumEvents : musicEvents
+    let events = activeKind == "agps" ? agpsEvents : activeKind == "album" ? albumEvents : musicEvents
+    let progress = activeKind == "agps" && phase == "transferring" ? 0.5 + progress * 0.5 : progress
     events.state = ["phase": phase, "progress": progress]
     events.sink?(events.state)
   }
 
   func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
+    case "getDeviceGpsStatus":
+      guard sdk.connected() else { result(error("13", "请先连接手表")); return }
+      sdk.getDeviceGpsStatus { status, failure in
+        DispatchQueue.main.async {
+          if let failure = failure { result(self.error("GPS_STATUS", failure.localizedDescription)); return }
+          guard let status = status else { result(self.error("GPS_STATUS", "未返回 GPS 状态")); return }
+          func millis(_ value: Int64) -> Int64 { value > 0 && value < 10_000_000_000 ? value * 1000 : value }
+          result(["gpsClipType": status.gpsClipType ?? "",
+                  "gpsFirmwareVersion": status.gpsFirmwareVersion ?? "",
+                  "gpsFirmwareBuild": Int(status.gpsFirmwareBuild),
+                  "agpsValidStartTimeMs": millis(Int64(status.agpsValidStartTime)),
+                  "agpsValidEndTimeMs": millis(Int64(status.agpsValidEndTime))])
+        }
+      }
+    case "updateAgps":
+      guard let (id, uuid) = begin(result, kind: "agps") else { return }
+      downloadAgps(id: id, uuid: uuid)
+    case "cancelAgpsUpdate":
+      if activeKind == "agps" { cancel() }
+      result(nil)
     case "getAlbumFileIds":
       guard !busy else { result(error("BUSY", "文件正在传输")); return }
       readAlbumIds { value in
@@ -241,6 +266,8 @@ final class SifliTransferBridge: NSObject, UIDocumentPickerDelegate {
   private func finish(_ id: UUID, failure: FlutterError?, cancelled: Bool = false) {
     guard session == id else { return }
     session = nil
+    agpsDownload?.cancel()
+    agpsDownload = nil
     let result = completion
     completion = nil
     if transmitting { SifliWatchfaceSDK.getInstance().stop() }
@@ -420,5 +447,55 @@ extension SifliTransferBridge: PHPickerViewControllerDelegate {
       self.albumFiles = files.compactMap { $0 }
       result(self.albumFiles.count)
     }
+  }
+}
+
+
+extension SifliTransferBridge {
+  private func downloadAgps(id: UUID, uuid: String, entries: [(String, Data)] = [],
+                            start: Int64 = 0, end: Int64 = Int64.max, attempt: Int = 0) {
+    guard session == id else { return }
+    guard entries.count < AgpsPackage.names.count else {
+      guard start < end, end > Int64(Date().timeIntervalSince1970) else {
+        finish(id, failure: error("AGPS_EXPIRED", "星历已过期或有效期不一致")); return
+      }
+      let root = FileManager.default.temporaryDirectory.appendingPathComponent("agps-\(id.uuidString)")
+      preparationQueue.async {
+        do {
+          try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+          let zip = root.appendingPathComponent("agps.zip")
+          try AgpsPackage.buildStoreZip(entries: entries).write(to: zip)
+          DispatchQueue.main.async { self.sendZip(zip, root: root, id: id, uuid: uuid, type: 3) }
+        } catch {
+          try? FileManager.default.removeItem(at: root)
+          DispatchQueue.main.async { self.finish(id, failure: self.error("AGPS_PACKAGE", error.localizedDescription)) }
+        }
+      }
+      return
+    }
+    emit("preparing", progress: Double(entries.count) / 10)
+    let name = AgpsPackage.names[entries.count]
+    let url = URL(string: "https://starcourse.rx-networks.cn/IYMx9qGm7H/\(name)?t=\(Int(Date().timeIntervalSince1970 * 1000))")!
+    let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
+    agpsDownload = URLSession.shared.dataTask(with: request) { data, response, failure in
+      DispatchQueue.main.async {
+        guard self.session == id else { return }
+        self.agpsDownload = nil
+        do {
+          if let failure = failure { throw failure }
+          guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), let data = data else {
+            throw NSError(domain: "AGPS", code: 3, userInfo: [NSLocalizedDescriptionKey: "星历下载失败：\(name)"])
+          }
+          let file = try AgpsPackage.process(data)
+          self.downloadAgps(id: id, uuid: uuid, entries: entries + [("music/gps/agps/" + name, file.data)],
+                            start: max(start, file.start), end: min(end, file.end))
+        } catch {
+          if attempt < 2 {
+            self.downloadAgps(id: id, uuid: uuid, entries: entries, start: start, end: end, attempt: attempt + 1)
+          } else { self.finish(id, failure: self.error("AGPS_DOWNLOAD", error.localizedDescription)) }
+        }
+      }
+    }
+    agpsDownload?.resume()
   }
 }

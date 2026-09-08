@@ -102,6 +102,19 @@ class HwBleSdk {
   Future<void> cancelAlbumTransfer() =>
       _method.invokeMethod<void>('cancelAlbumTransfer');
 
+  Future<Map<String, dynamic>> getDeviceGpsStatus() async {
+    final data = await _method.invokeMapMethod<String, dynamic>('getDeviceGpsStatus');
+    if (data == null) throw StateError('未返回 GPS 状态');
+    return data;
+  }
+
+  Stream<Map<String, dynamic>> agpsUpdateEvents() =>
+      const EventChannel('sdkdemo/hw_ble/agps').receiveBroadcastStream().map(
+        (event) => Map<String, dynamic>.from(event as Map),
+      );
+  Future<void> updateAgps() => _method.invokeMethod<void>('updateAgps');
+  Future<void> cancelAgpsUpdate() => _method.invokeMethod<void>('cancelAgpsUpdate');
+
   Future<void> init({int maxMtu = 247}) async {
     await _method.invokeMethod<void>('init', {'maxMtu': maxMtu});
   }

@@ -47,14 +47,14 @@ private final class HwBleBridgeImpl: NSObject {
   private var sdk: HwBluetoothSDK { HwBluetoothSDK.sharedInstance() }
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-    if fileTransfer.busy && !["cancelMusicTransfer", "cancelAlbumTransfer", "isConnected", "disconnect", "destroy"].contains(call.method) {
+    if fileTransfer.busy && !["cancelMusicTransfer", "cancelAlbumTransfer", "cancelAgpsUpdate", "isConnected", "disconnect", "destroy"].contains(call.method) {
       result(FlutterError(code: "BUSY", message: "请先完成或取消文件推送", details: nil))
       return
     }
     switch call.method {
     case "getMusicStorage", "pickMusicFiles", "pushMusicSifli", "cancelMusicTransfer",
-         "getAlbumFileIds", "pickAlbumImages", "pushAlbumSifli", "cancelAlbumTransfer":
-      if ["pushMusicSifli", "pushAlbumSifli"].contains(call.method) && (jlHealthBusy || notificationContactsBusy) {
+         "getAlbumFileIds", "pickAlbumImages", "pushAlbumSifli", "cancelAlbumTransfer", "getDeviceGpsStatus", "updateAgps", "cancelAgpsUpdate":
+      if ["pushMusicSifli", "pushAlbumSifli", "updateAgps"].contains(call.method) && (jlHealthBusy || notificationContactsBusy) {
         result(FlutterError(code: "BUSY", message: "请等待设备操作完成", details: nil))
         return
       }
