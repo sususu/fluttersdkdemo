@@ -115,6 +115,23 @@ class HwBleSdk {
   Future<void> updateAgps() => _method.invokeMethod<void>('updateAgps');
   Future<void> cancelAgpsUpdate() => _method.invokeMethod<void>('cancelAgpsUpdate');
 
+  Future<Map<String, dynamic>> refreshOtaInfo() async {
+    final data = await _method.invokeMapMethod<String, dynamic>('refreshOtaInfo');
+    if (data == null) throw StateError('未返回设备信息');
+    return data;
+  }
+  Future<Map<String, dynamic>> checkOta() async {
+    final data = await _method.invokeMapMethod<String, dynamic>('checkOta');
+    if (data == null) throw StateError('未返回升级信息');
+    return data;
+  }
+  Future<void> startOta() => _method.invokeMethod<void>('startOta');
+  Future<void> cancelOta() => _method.invokeMethod<void>('cancelOta');
+  Stream<Map<String, dynamic>> otaEvents() =>
+      const EventChannel('sdkdemo/hw_ble/ota').receiveBroadcastStream().map(
+        (event) => Map<String, dynamic>.from(event as Map),
+      );
+
   Future<void> init({int maxMtu = 247}) async {
     await _method.invokeMethod<void>('init', {'maxMtu': maxMtu});
   }

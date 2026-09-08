@@ -8,6 +8,7 @@ import 'package:sdkdemo/pages/notifications_contacts_page.dart';
 import 'package:sdkdemo/pages/music_transfer_page.dart';
 import 'package:sdkdemo/pages/album_transfer_page.dart';
 import 'package:sdkdemo/pages/agps_update_page.dart';
+import 'package:sdkdemo/pages/ota_upgrade_page.dart';
 import 'package:sdkdemo/pages/bind_flow_sheet.dart';
 import 'package:sdkdemo/pages/goals_page.dart';
 import 'package:sdkdemo/pages/jieli_health_page.dart';
@@ -72,6 +73,7 @@ class _HomePageState extends State<HomePage> {
   /// 用户主动点「断开连接」后为 true，此时不自动重连。
   bool _manualDisconnect = false;
   bool _reconnecting = false;
+  bool _otaPageOpen = false;
   Timer? _reconnectTimer;
 
   @override
@@ -187,7 +189,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _scheduleReconnect({Duration delay = const Duration(seconds: 2)}) {
-    if (!_bound || _manualDisconnect || _device == null) return;
+    if (_otaPageOpen || !_bound || _manualDisconnect || _device == null) return;
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(delay, () {
       _tryReconnect(reason: '断线重连');
@@ -196,7 +198,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _tryReconnect({required String reason}) async {
     final device = _device;
-    if (!_bound || _manualDisconnect || device == null) return;
+    if (_otaPageOpen || !_bound || _manualDisconnect || device == null) return;
     if (_reconnecting) return;
     if (_phase == DevicePhase.unbinding || _phase == DevicePhase.syncing) {
       return;
@@ -206,7 +208,8 @@ class _HomePageState extends State<HomePage> {
       if (await _sdk.isConnected()) return;
     } catch (_) {}
 
-    if (!mounted || !_bound || _manualDisconnect || _busy) return;
+    if (!mounted || _otaPageOpen || !_bound || _manualDisconnect || _busy)
+      return;
     _reconnecting = true;
     if (mounted) {
       setState(() => _status = '重连中（$reason）…');
@@ -693,6 +696,26 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 20),
                 section('设备功能', [
                   buttons([
+                    action(
+                      'OTA 升级',
+                      Icons.system_update_alt,
+                      _busy || _reconnecting
+                          ? null
+                          : () async {
+                              _otaPageOpen = true;
+                              _reconnectTimer?.cancel();
+                              try {
+                                await Navigator.of(context).push<void>(
+                                  MaterialPageRoute(
+                                    builder: (_) => const OtaUpgradePage(),
+                                  ),
+                                );
+                              } finally {
+                                _otaPageOpen = false;
+                                if (mounted) _scheduleReconnect();
+                              }
+                            },
+                    ),
                     action(
                       'AGPS 更新',
                       Icons.satellite_alt,

@@ -12,6 +12,7 @@ enum HwBleBridge {
 
 private final class HwBleBridgeImpl: NSObject {
   private let fileTransfer = SifliTransferBridge()
+  private let ota = OtaBridge()
   private var methodChannel: FlutterMethodChannel?
   private var scanEventSink: FlutterEventSink?
   private var connectionEventSink: FlutterEventSink?
@@ -30,6 +31,7 @@ private final class HwBleBridgeImpl: NSObject {
     }
     self.methodChannel = methodChannel
     fileTransfer.register(with: registrar)
+    ota.register(with: registrar)
 
     let scanChannel = FlutterEventChannel(
       name: "sdkdemo/hw_ble/scan",
@@ -47,11 +49,19 @@ private final class HwBleBridgeImpl: NSObject {
   private var sdk: HwBluetoothSDK { HwBluetoothSDK.sharedInstance() }
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if ota.busy && !["cancelOta", "isConnected", "disconnect", "destroy"].contains(call.method) {
+      result(FlutterError(code: "BUSY", message: "请先完成或取消 OTA 操作", details: nil)); return
+    }
     if fileTransfer.busy && !["cancelMusicTransfer", "cancelAlbumTransfer", "cancelAgpsUpdate", "isConnected", "disconnect", "destroy"].contains(call.method) {
       result(FlutterError(code: "BUSY", message: "请先完成或取消文件推送", details: nil))
       return
     }
     switch call.method {
+    case "refreshOtaInfo", "checkOta", "startOta", "cancelOta":
+      guard !jlHealthBusy, !notificationContactsBusy else {
+        result(FlutterError(code: "BUSY", message: "请等待设备操作完成", details: nil)); return
+      }
+      ota.handle(call, result: result)
     case "getMusicStorage", "pickMusicFiles", "pushMusicSifli", "cancelMusicTransfer",
          "getAlbumFileIds", "pickAlbumImages", "pushAlbumSifli", "cancelAlbumTransfer", "getDeviceGpsStatus", "updateAgps", "cancelAgpsUpdate":
       if ["pushMusicSifli", "pushAlbumSifli", "updateAgps"].contains(call.method) && (jlHealthBusy || notificationContactsBusy) {
@@ -69,6 +79,7 @@ private final class HwBleBridgeImpl: NSObject {
       }
       result(nil)
     case "destroy":
+      ota.cancel()
       fileTransfer.cancel()
       if initialized {
         sdk.destroy()
@@ -86,6 +97,7 @@ private final class HwBleBridgeImpl: NSObject {
     case "connect":
       handleConnect(call: call, result: result)
     case "disconnect":
+      ota.cancel()
       fileTransfer.cancel()
       sdk.disconnect { [weak self] error in
         guard let self = self else { return }
@@ -390,7 +402,7 @@ private final class HwBleBridgeImpl: NSObject {
   }
 
   private func emitConnectionEvent(connected: Bool) {
-    if !connected { DispatchQueue.main.async { self.fileTransfer.disconnected() } }
+    if !connected { DispatchQueue.main.async { self.fileTransfer.disconnected(); self.ota.disconnected() } }
     guard let sink = connectionEventSink else { return }
     var payload: [String: Any] = [
       "event": connected ? "connected" : "disconnected",
