@@ -49,6 +49,7 @@ final class SifliTransferBridge: NSObject, UIDocumentPickerDelegate {
   private var transferRoot: URL?
   private var transmitting = false
   private var initialized = false
+  private var jieli = false
   var busy: Bool { session != nil || customPackaging }
 
   func register(with registrar: FlutterPluginRegistrar) {
@@ -84,11 +85,19 @@ final class SifliTransferBridge: NSObject, UIDocumentPickerDelegate {
       else { result(error("UNSUPPORTED", "选择照片需要 iOS 14 或以上")) }
     case "previewCustomWatchface":
       do {
-        let (_, png) = try CustomWatchface.make(call.arguments as? [String: Any] ?? [:])
+        let args = call.arguments as? [String: Any] ?? [:]
+        let png: Data
+        if args["jieli"] as? Bool == true {
+          guard let data = try JieliWatchface.make(args).preview.pngData() else {
+            result(error("CUSTOM_PREVIEW", "无法生成表盘预览")); return
+          }
+          png = data
+        }
+        else { (_, png) = try CustomWatchface.make(args) }
         result(FlutterStandardTypedData(bytes: png))
       } catch { result(self.error("CUSTOM_CONFIG", error.localizedDescription)) }
     case "pushCustomWatchface": startCustomWatchface(call.arguments as? [String: Any] ?? [:], result: result)
-    case "getOnlineWatchfaces": loadWatchfaceCatalog(result)
+    case "getOnlineWatchfaces": loadWatchfaceCatalog(result, jieli: (call.arguments as? [String: Any])?["jieli"] as? Bool == true)
     case "installOnlineWatchface": installWatchface(call.arguments as? [String: Any] ?? [:], result: result)
     case "cancelWatchfaceTransfer":
       if ["watchface", "custom"].contains(activeKind) { cancel() }
@@ -248,14 +257,16 @@ final class SifliTransferBridge: NSObject, UIDocumentPickerDelegate {
     }
   }
 
-  private func begin(_ result: @escaping FlutterResult, kind: String) -> (UUID, String)? {
+  private func begin(_ result: @escaping FlutterResult, kind: String, jieli: Bool = false) -> (UUID, String)? {
     guard sdk.connected(), let uuid = sdk.connectedDevice()?.peripheral?.identifier.uuidString else {
       result(error("13", "请先连接手表")); return nil
     }
     guard !busy, pickerResult == nil, albumPickerResult == nil, !SifliWatchfaceSDK.getInstance().isWorking else {
       result(error("BUSY", "已有文件操作进行中")); return nil
     }
-    if !initialized {
+    guard sdk.multipleFileTransferService?.isRunning != true else { result(error("BUSY", "杰里文件正在传输")); return nil }
+    self.jieli = jieli
+    if !jieli && !initialized {
       SifliWatchfaceSDK.getInstance().initSDK()
       initialized = true
     }
@@ -302,7 +313,10 @@ final class SifliTransferBridge: NSObject, UIDocumentPickerDelegate {
     agpsDownload = nil
     let result = completion
     completion = nil
-    if transmitting { SifliWatchfaceSDK.getInstance().stop() }
+    if transmitting {
+      if jieli { sdk.multipleFileTransferService?.stop() }
+      else { SifliWatchfaceSDK.getInstance().stop() }
+    }
     transmitting = false
     if let root = transferRoot { try? FileManager.default.removeItem(at: root) }
     transferRoot = nil
@@ -551,8 +565,8 @@ extension SifliTransferBridge {
 }
 
 extension SifliTransferBridge {
-  private func loadWatchfaceCatalog(_ result: @escaping FlutterResult) {
-    guard let (id, uuid) = begin(result, kind: "watchface") else { return }
+  private func loadWatchfaceCatalog(_ result: @escaping FlutterResult, jieli: Bool) {
+    guard let (id, uuid) = begin(result, kind: "watchface", jieli: jieli) else { return }
     watchfaceCatalog = []; catalogDevice = ""
     watchfaceQueryTimeout(id)
     sdk.getDeviceInfo { info, failure in
@@ -595,7 +609,7 @@ extension SifliTransferBridge {
 
   private func watchfaceQueryTimeout(_ id: UUID) {
     DispatchQueue.main.asyncAfter(deadline: .now() + 35) {
-      guard self.session == id, self.watchfaceTask == nil, !self.transmitting else { return }
+      guard self.session == id, self.watchfaceTask == nil, !self.transmitting, !self.customPackaging else { return }
       self.finish(id, failure: self.error("TIMEOUT", "设备响应超时"))
     }
   }
@@ -606,7 +620,8 @@ extension SifliTransferBridge {
           sdk.connectedDevice()?.peripheral?.identifier.uuidString == catalogDevice else {
       result(error("WATCHFACE_ITEM", "请刷新表盘列表后重新选择")); return
     }
-    guard let (id, uuid) = begin(result, kind: "watchface") else { return }
+    guard let (id, uuid) = begin(result, kind: "watchface", jieli: arguments["jieli"] as? Bool == true) else { return }
+    if jieli { downloadWatchface(item, id: id, uuid: uuid); return }
     watchfaceQueryTimeout(id)
     emit("checking")
     sdk.getSifliInstalledWatchfaceNames { list, failure in
@@ -638,6 +653,7 @@ extension SifliTransferBridge {
     transferRoot = root
     let zip = root.appendingPathComponent("watchface.zip")
     emit("downloading")
+    let isJieli = jieli
     let task = URLSession.shared.downloadTask(with: URLRequest(url: url, timeoutInterval: 120)) { location, response, failure in
       var downloadError = failure
       do {
@@ -647,7 +663,7 @@ extension SifliTransferBridge {
         }
         try FileManager.default.moveItem(at: location, to: zip)
         let data = try Data(contentsOf: zip, options: .mappedIfSafe)
-        guard data.count >= 4, data.prefix(4) == Data([0x50, 0x4b, 0x03, 0x04]) else {
+        guard !data.isEmpty, isJieli || (data.count >= 4 && data.prefix(4) == Data([0x50, 0x4b, 0x03, 0x04])) else {
           throw NSError(domain: "Watchface", code: 2, userInfo: [NSLocalizedDescriptionKey: "表盘文件不是有效的 ZIP 包"])
         }
         if let expected = item["binMd5"] as? String, !expected.isEmpty {
@@ -661,6 +677,15 @@ extension SifliTransferBridge {
         guard self.session == id else { try? FileManager.default.removeItem(at: root); return }
         self.watchfaceTask = nil; self.watchfaceProgress = nil
         if let failure = downloadError { self.finish(id, failure: self.error("WATCHFACE_DOWNLOAD", failure.localizedDescription)); return }
+        if isJieli {
+          do {
+            let model = HwMultipleFileTransferModel()
+            model.fileName = item["name"] as? String ?? "dial"
+            model.fileData = try Data(contentsOf: zip)
+            self.sendJieli([model], config: nil, id: id, uuid: uuid)
+          } catch { self.finish(id, failure: self.error("WATCHFACE_FILE", error.localizedDescription)) }
+          return
+        }
         // Online packages require type 5 with no byte alignment, unlike custom dials.
         self.sendZip(zip, root: root, id: id, uuid: uuid, type: 5, byteAlign: false)
       }
@@ -680,6 +705,7 @@ extension SifliTransferBridge {
 
 extension SifliTransferBridge {
   private func startCustomWatchface(_ args: [String: Any], result: @escaping FlutterResult) {
+    if args["jieli"] as? Bool == true { startJieliCustom(args, result: result); return }
     let face: SlifiCustomWatchface
     do { (face, _) = try CustomWatchface.make(args) }
     catch { result(self.error("CUSTOM_CONFIG", error.localizedDescription)); return }
@@ -708,5 +734,75 @@ extension SifliTransferBridge {
         }
       }
     }
+  }
+}
+
+extension SifliTransferBridge {
+  private func startJieliCustom(_ args: [String: Any], result: @escaping FlutterResult) {
+    let face: JieliWatchface
+    do { face = try JieliWatchface.make(args) }
+    catch { result(self.error("CUSTOM_CONFIG", error.localizedDescription)); return }
+    guard let (id, uuid) = begin(result, kind: "custom", jieli: true) else { return }
+    watchfaceQueryTimeout(id)
+    sdk.getCoustomInterfaceAvailableStorage { storage, failure in
+      DispatchQueue.main.async {
+        guard self.session == id else { return }
+        if let failure = failure { self.finish(id, failure: self.error("STORAGE", failure.localizedDescription)); return }
+        let maximum = min(8, max(1, (storage * 1024 - 100 * 1024 - 70_800) / 220_128))
+        guard face.backgrounds.count <= maximum else { self.finish(id, failure: self.error("NO_SPACE", "当前设备最多支持 \(maximum) 张背景")); return }
+        self.customPackaging = true
+        self.preparationQueue.async {
+          let output = Result { try face.files() }
+          DispatchQueue.main.async {
+            self.customPackaging = false
+            guard self.session == id else { return }
+            switch output {
+            case .success(let files): self.sendJieli(files, config: face.config, id: id, uuid: uuid)
+            case .failure(let failure): self.finish(id, failure: self.error("CUSTOM_PACKAGE", failure.localizedDescription))
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private func sendJieli(_ files: [HwMultipleFileTransferModel], config: HwJLWatchFaceConfigModel?, id: UUID, uuid: String) {
+    guard session == id else { return }
+    guard sdk.connected(), sdk.connectedDevice()?.peripheral?.identifier.uuidString == uuid,
+          let service = sdk.multipleFileTransferService, !service.isRunning else {
+      finish(id, failure: error("TRANSFER_UNAVAILABLE", "连接已变化或传输通道忙碌")); return
+    }
+    transmitting = true
+    emit("transferring")
+    service.start(withFileModels: files, transferType: config == nil ? .onlineDial : .customDialImage,
+      readyCallback: { ok, failure in
+        DispatchQueue.main.async {
+          guard self.session == id else { return }
+          if failure != nil || !ok { self.finish(id, failure: self.error("TRANSFER_READY", failure?.localizedDescription ?? "设备未就绪")) }
+        }
+      }, progressCallback: { value, failure in
+        DispatchQueue.main.async {
+          guard self.session == id else { return }
+          if let failure = failure { self.finish(id, failure: self.error("TRANSFER", failure.localizedDescription)); return }
+          guard value.isFinite else { return }
+          self.emit("transferring", progress: min(1, max(0, Double(value))))
+        }
+      }, finishCallback: { ok, failure in
+        DispatchQueue.main.async {
+          guard self.session == id else { return }
+          guard ok, failure == nil else { self.finish(id, failure: self.error("TRANSFER", failure?.localizedDescription ?? "表盘传输失败")); return }
+          guard let config = config else { self.finish(id, failure: nil); return }
+          guard let center = HwBluetoothCenter.sharedInstance() else { self.finish(id, failure: self.error("CONFIG", "蓝牙服务不可用")); return }
+          self.emit("configuring", progress: 1)
+          DispatchQueue.main.asyncAfter(deadline: .now()+30) {
+            self.finish(id, failure: self.error("TIMEOUT", "表盘配置响应超时"))
+          }
+          center.updateJLCustomWatceFace(config) { success, error in
+            DispatchQueue.main.async {
+              self.finish(id, failure: success && error == nil ? nil : self.error("CONFIG", error?.localizedDescription ?? "表盘配置失败"))
+            }
+          }
+        }
+      })
   }
 }

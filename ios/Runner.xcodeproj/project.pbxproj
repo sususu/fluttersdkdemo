@@ -10,6 +10,7 @@
         A02100000000000000000002 /* SifliTransferBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02100000000000000000001 /* SifliTransferBridge.swift */; };
         A02200000000000000000002 /* AgpsPackage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02200000000000000000001 /* AgpsPackage.swift */; };
         A02600000000000000000002 /* CustomWatchface.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02600000000000000000001 /* CustomWatchface.swift */; };
+        A02700000000000000000002 /* JieliWatchface.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02700000000000000000001 /* JieliWatchface.swift */; };
         A02500000000000000000002 /* WatchfaceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02500000000000000000001 /* WatchfaceCatalog.swift */; };
         A02300000000000000000002 /* OtaFirmware.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02300000000000000000001 /* OtaFirmware.swift */; };
         A02400000000000000000002 /* OtaBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02400000000000000000001 /* OtaBridge.swift */; };
@@ -54,6 +55,7 @@
         A02100000000000000000001 /* SifliTransferBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SifliTransferBridge.swift; sourceTree = "<group>"; };
         A02200000000000000000001 /* AgpsPackage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgpsPackage.swift; sourceTree = "<group>"; };
         A02600000000000000000001 /* CustomWatchface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomWatchface.swift; sourceTree = "<group>"; };
+        A02700000000000000000001 /* JieliWatchface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JieliWatchface.swift; sourceTree = "<group>"; };
         A02500000000000000000001 /* WatchfaceCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchfaceCatalog.swift; sourceTree = "<group>"; };
         A02300000000000000000001 /* OtaFirmware.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OtaFirmware.swift; sourceTree = "<group>"; };
         A02400000000000000000001 /* OtaBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OtaBridge.swift; sourceTree = "<group>"; };
@@ -174,6 +176,7 @@
                 A02100000000000000000001 /* SifliTransferBridge.swift */,
                 A02200000000000000000001 /* AgpsPackage.swift */,
                 A02600000000000000000001 /* CustomWatchface.swift */,
+                A02700000000000000000001 /* JieliWatchface.swift */,
                 A02500000000000000000001 /* WatchfaceCatalog.swift */,
                 A02300000000000000000001 /* OtaFirmware.swift */,
                 A02400000000000000000001 /* OtaBridge.swift */,
@@ -415,6 +418,7 @@
                 A02100000000000000000002 /* SifliTransferBridge.swift in Sources */,
                 A02200000000000000000002 /* AgpsPackage.swift in Sources */,
                 A02600000000000000000002 /* CustomWatchface.swift in Sources */,
+                A02700000000000000000002 /* JieliWatchface.swift in Sources */,
                 A02500000000000000000002 /* WatchfaceCatalog.swift in Sources */,
                 A02300000000000000000002 /* OtaFirmware.swift in Sources */,
                 A02400000000000000000002 /* OtaBridge.swift in Sources */,

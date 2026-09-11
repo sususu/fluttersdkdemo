@@ -6,7 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:sdkdemo/sdk/sdk.dart';
 
 class WatchfacePage extends StatefulWidget {
-  const WatchfacePage({super.key});
+  const WatchfacePage({super.key, this.jieli = false});
+  final bool jieli;
   @override
   State<WatchfacePage> createState() => _WatchfacePageState();
 }
@@ -70,7 +71,7 @@ class _WatchfacePageState extends State<WatchfacePage> {
       _status = '正在加载表盘…';
     });
     try {
-      final items = await _sdk.getOnlineWatchfaces();
+      final items = await _sdk.getOnlineWatchfaces(jieli: widget.jieli);
       if (mounted)
         setState(() {
           _items = items;
@@ -125,7 +126,10 @@ class _WatchfacePageState extends State<WatchfacePage> {
       _logs.add('选择表盘：${item['name']}');
     });
     try {
-      await _sdk.installOnlineWatchface(item['id'] as String);
+      await _sdk.installOnlineWatchface(
+        item['id'] as String,
+        jieli: widget.jieli,
+      );
       if (mounted)
         setState(() {
           _installing = false;
@@ -167,7 +171,7 @@ class _WatchfacePageState extends State<WatchfacePage> {
   Widget build(BuildContext context) => PopScope(
     canPop: !_busy && !_customBusy,
     child: Scaffold(
-      appBar: AppBar(title: const Text('表盘（思澈）')),
+      appBar: AppBar(title: Text(widget.jieli ? '表盘（杰里）' : '表盘（思澈）')),
       body: SafeArea(
         child: Column(
           children: [
@@ -190,6 +194,7 @@ class _WatchfacePageState extends State<WatchfacePage> {
                 children: [
                   _onlineBody(context),
                   CustomWatchfaceEditor(
+                    jieli: widget.jieli,
                     active: _custom,
                     onBusyChanged: (value) =>
                         setState(() => _customBusy = value),
@@ -209,7 +214,7 @@ class _WatchfacePageState extends State<WatchfacePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(_supported ? _status : '当前仅支持 iOS 思澈设备'),
+          Text(_supported ? _status : '当前仅支持 iOS 设备'),
           const SizedBox(height: 8),
           FilledButton.tonal(
             onPressed: _supported && !_busy ? _refresh : null,

@@ -1,6 +1,7 @@
 PODS:
   - Flutter (1.0.0)
   - HwBluetoothSDK (3.2.10)
+  - JLBmpConvertKit (1.2.0)
   - Masonry (1.1.0)
   - SSZipArchive (2.4.3)
   - WatchfaceSDK (1.0.6):
@@ -12,6 +13,7 @@ PODS:
 DEPENDENCIES:
   - Flutter (from `Flutter`)
   - HwBluetoothSDK (from `.`)
+  - JLBmpConvertKit (from `https://github.com/sususu/JLBmpConvertKit.git`, tag `1.2.0`)
   - WatchfaceSDK (from `https://github.com/HWdan/WatchfaceSDK.git`, commit `4ddc2f1d7b007233306c2244752a7c5fa6c275b1`)
 
 SPEC REPOS:
@@ -25,11 +27,17 @@ EXTERNAL SOURCES:
     :path: Flutter
   HwBluetoothSDK:
     :path: "."
+  JLBmpConvertKit:
+    :git: https://github.com/sususu/JLBmpConvertKit.git
+    :tag: 1.2.0
   WatchfaceSDK:
     :commit: 4ddc2f1d7b007233306c2244752a7c5fa6c275b1
     :git: https://github.com/HWdan/WatchfaceSDK.git
 
 CHECKOUT OPTIONS:
+  JLBmpConvertKit:
+    :git: https://github.com/sususu/JLBmpConvertKit.git
+    :tag: 1.2.0
   WatchfaceSDK:
     :commit: 4ddc2f1d7b007233306c2244752a7c5fa6c275b1
     :git: https://github.com/HWdan/WatchfaceSDK.git
@@ -37,11 +45,12 @@ CHECKOUT OPTIONS:
 SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   HwBluetoothSDK: 8aa5baa6ca76160670713d8c927b1f7af10ad5a3
+  JLBmpConvertKit: 864be69abecfd00fbbaeb2ba3e8ac57158b2215a
   Masonry: 678fab65091a9290e40e2832a55e7ab731aad201
   SSZipArchive: fe6a26b2a54d5a0890f2567b5cc6de5caa600aef
   WatchfaceSDK: 2e7f53ac19c9b0256e6256b5d096a98bacba5f0c
   Zip: b3fef584b147b6e582b2256a9815c897d60ddc67
 
-PODFILE CHECKSUM: 96815142ef57ab1b0d9c5919d859db0b547c1cc5
+PODFILE CHECKSUM: aa3e136215408fc41b0271766a7e51a4281dbf1c
 
 COCOAPODS: 1.16.2

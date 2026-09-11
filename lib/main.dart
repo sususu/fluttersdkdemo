@@ -724,6 +724,20 @@ class _HomePageState extends State<HomePage> {
                             },
                     ),
                     action(
+                      '杰里表盘',
+                      Icons.watch_outlined,
+                      _busy
+                          ? null
+                          : () {
+                              Navigator.of(context).push<void>(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const WatchfacePage(jieli: true),
+                                ),
+                              );
+                            },
+                    ),
+                    action(
                       'OTA 升级',
                       Icons.system_update_alt,
                       _busy || _reconnecting ? null : () => _openOta(),

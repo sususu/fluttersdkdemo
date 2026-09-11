@@ -30,6 +30,7 @@ target 'Runner' do
 
   # Local vendored HwBluetoothSDK (ios/HwBluetoothSDK.podspec).
   pod 'HwBluetoothSDK', :path => '.'
+  pod 'JLBmpConvertKit', :git => 'https://github.com/sususu/JLBmpConvertKit.git', :tag => '1.2.0'
   pod 'WatchfaceSDK', :git => 'https://github.com/HWdan/WatchfaceSDK.git', :commit => '4ddc2f1d7b007233306c2244752a7c5fa6c275b1'
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do

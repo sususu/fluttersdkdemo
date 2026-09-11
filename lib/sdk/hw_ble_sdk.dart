@@ -104,7 +104,9 @@ class HwBleSdk {
       _method.invokeMethod<void>('cancelAlbumTransfer');
 
   Future<Map<String, dynamic>> getDeviceGpsStatus() async {
-    final data = await _method.invokeMapMethod<String, dynamic>('getDeviceGpsStatus');
+    final data = await _method.invokeMapMethod<String, dynamic>(
+      'getDeviceGpsStatus',
+    );
     if (data == null) throw StateError('未返回 GPS 状态');
     return data;
   }
@@ -114,51 +116,75 @@ class HwBleSdk {
         (event) => Map<String, dynamic>.from(event as Map),
       );
   Future<void> updateAgps() => _method.invokeMethod<void>('updateAgps');
-  Future<void> cancelAgpsUpdate() => _method.invokeMethod<void>('cancelAgpsUpdate');
+  Future<void> cancelAgpsUpdate() =>
+      _method.invokeMethod<void>('cancelAgpsUpdate');
 
   Future<Map<String, dynamic>> refreshOtaInfo({bool jieli = false}) async {
-    final data = await _method.invokeMapMethod<String, dynamic>('refreshOtaInfo', jieli ? {'jieli': true} : null);
+    final data = await _method.invokeMapMethod<String, dynamic>(
+      'refreshOtaInfo',
+      jieli ? {'jieli': true} : null,
+    );
     if (data == null) throw StateError('未返回设备信息');
     return data;
   }
+
   Future<Map<String, dynamic>> checkOta({bool jieli = false}) async {
-    final data = await _method.invokeMapMethod<String, dynamic>('checkOta', jieli ? {'jieli': true} : null);
+    final data = await _method.invokeMapMethod<String, dynamic>(
+      'checkOta',
+      jieli ? {'jieli': true} : null,
+    );
     if (data == null) throw StateError('未返回升级信息');
     return data;
   }
-  Future<void> startOta({bool jieli = false}) => _method.invokeMethod<void>('startOta', jieli ? {'jieli': true} : null);
+
+  Future<void> startOta({bool jieli = false}) =>
+      _method.invokeMethod<void>('startOta', jieli ? {'jieli': true} : null);
   Future<void> cancelOta() => _method.invokeMethod<void>('cancelOta');
   Stream<Map<String, dynamic>> otaEvents() =>
       const EventChannel('sdkdemo/hw_ble/ota').receiveBroadcastStream().map(
         (event) => Map<String, dynamic>.from(event as Map),
       );
 
-  Future<List<Map<String, dynamic>>> getOnlineWatchfaces() async {
-    final rows = await _method.invokeListMethod<dynamic>('getOnlineWatchfaces');
+  Future<List<Map<String, dynamic>>> getOnlineWatchfaces({
+    bool jieli = false,
+  }) async {
+    final rows = await _method.invokeListMethod<dynamic>(
+      'getOnlineWatchfaces',
+      jieli ? {'jieli': true} : null,
+    );
     if (rows == null) throw StateError('未返回在线表盘列表');
     return rows.map((row) => Map<String, dynamic>.from(row as Map)).toList();
   }
-  Future<void> installOnlineWatchface(String id) =>
-      _method.invokeMethod<void>('installOnlineWatchface', {'id': id});
-  Future<void> cancelWatchfaceTransfer() => _method.invokeMethod<void>('cancelWatchfaceTransfer');
+
+  Future<void> installOnlineWatchface(String id, {bool jieli = false}) =>
+      _method.invokeMethod<void>('installOnlineWatchface', {
+        'id': id,
+        if (jieli) 'jieli': true,
+      });
+  Future<void> cancelWatchfaceTransfer() =>
+      _method.invokeMethod<void>('cancelWatchfaceTransfer');
   Stream<Map<String, dynamic>> watchfaceTransferEvents() =>
-      const EventChannel('sdkdemo/hw_ble/watchface').receiveBroadcastStream().map(
-        (event) => Map<String, dynamic>.from(event as Map),
-      );
+      const EventChannel('sdkdemo/hw_ble/watchface')
+          .receiveBroadcastStream()
+          .map((event) => Map<String, dynamic>.from(event as Map));
 
   Future<Uint8List?> pickCustomWatchfaceBackground() =>
       _method.invokeMethod<Uint8List>('pickCustomWatchfaceBackground');
   Future<Uint8List> previewCustomWatchface(Map<String, dynamic> config) async {
-    final png = await _method.invokeMethod<Uint8List>('previewCustomWatchface', config);
+    final png = await _method.invokeMethod<Uint8List>(
+      'previewCustomWatchface',
+      config,
+    );
     if (png == null) throw StateError('未返回表盘预览');
     return png;
   }
+
   Future<void> pushCustomWatchface(Map<String, dynamic> config) =>
       _method.invokeMethod<void>('pushCustomWatchface', config);
   Stream<Map<String, dynamic>> customWatchfaceEvents() =>
-      const EventChannel('sdkdemo/hw_ble/customWatchface').receiveBroadcastStream().map(
-        (event) => Map<String, dynamic>.from(event as Map),
-      );
+      const EventChannel('sdkdemo/hw_ble/customWatchface')
+          .receiveBroadcastStream()
+          .map((event) => Map<String, dynamic>.from(event as Map));
 
   Future<void> init({int maxMtu = 247}) async {
     await _method.invokeMethod<void>('init', {'maxMtu': maxMtu});
