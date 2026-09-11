@@ -13,6 +13,7 @@ enum HwBleBridge {
 private final class HwBleBridgeImpl: NSObject {
   private let fileTransfer = SifliTransferBridge()
   private let ota = OtaBridge()
+  private let aiWatchface = AiWatchfaceBridge()
   private var methodChannel: FlutterMethodChannel?
   private var scanEventSink: FlutterEventSink?
   private var connectionEventSink: FlutterEventSink?
@@ -32,6 +33,7 @@ private final class HwBleBridgeImpl: NSObject {
     self.methodChannel = methodChannel
     fileTransfer.register(with: registrar)
     ota.register(with: registrar)
+    aiWatchface.register(with: registrar)
 
     let scanChannel = FlutterEventChannel(
       name: "sdkdemo/hw_ble/scan",
@@ -49,6 +51,10 @@ private final class HwBleBridgeImpl: NSObject {
   private var sdk: HwBluetoothSDK { HwBluetoothSDK.sharedInstance() }
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if call.method == "stopAiWatchface" { aiWatchface.stop(); result(nil); return }
+    if aiWatchface.busy && !["isConnected", "disconnect", "destroy"].contains(call.method) {
+      result(FlutterError(code: "BUSY", message: "请先停止 AI 监听", details: nil)); return
+    }
     if ota.busy && !["cancelOta", "isConnected", "disconnect", "destroy"].contains(call.method) {
       result(FlutterError(code: "BUSY", message: "请先完成或取消 OTA 操作", details: nil)); return
     }
@@ -57,6 +63,11 @@ private final class HwBleBridgeImpl: NSObject {
       return
     }
     switch call.method {
+    case "startAiWatchface":
+      guard !jlHealthBusy, !notificationContactsBusy else {
+        result(FlutterError(code: "BUSY", message: "请等待设备操作完成", details: nil)); return
+      }
+      aiWatchface.start(call.arguments as? [String: Any] ?? [:], result: result)
     case "refreshOtaInfo", "checkOta", "startOta", "cancelOta":
       guard !jlHealthBusy, !notificationContactsBusy else {
         result(FlutterError(code: "BUSY", message: "请等待设备操作完成", details: nil)); return
@@ -81,6 +92,7 @@ private final class HwBleBridgeImpl: NSObject {
       }
       result(nil)
     case "destroy":
+      aiWatchface.stop()
       ota.cancel()
       fileTransfer.cancel()
       if initialized {
@@ -99,6 +111,7 @@ private final class HwBleBridgeImpl: NSObject {
     case "connect":
       handleConnect(call: call, result: result)
     case "disconnect":
+      aiWatchface.stop()
       ota.cancel()
       fileTransfer.cancel()
       sdk.disconnect { [weak self] error in
@@ -404,7 +417,8 @@ private final class HwBleBridgeImpl: NSObject {
   }
 
   private func emitConnectionEvent(connected: Bool) {
-    if !connected { DispatchQueue.main.async { self.fileTransfer.disconnected(); self.ota.disconnected() } }
+    if !connected { DispatchQueue.main.async { self.aiWatchface.stop()
+        self.fileTransfer.disconnected(); self.ota.disconnected() } }
     guard let sink = connectionEventSink else { return }
     var payload: [String: Any] = [
       "event": connected ? "connected" : "disconnected",

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:sdkdemo/pages/ai_watchface_editor.dart';
 import 'package:sdkdemo/pages/custom_watchface_editor.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -20,7 +21,8 @@ class _WatchfacePageState extends State<WatchfacePage> {
   String _status = '就绪';
   bool _busy = false, _installing = false, _cancelling = false;
   double _progress = 0;
-  bool _custom = false, _customBusy = false;
+  int _tab = 0;
+  bool _customBusy = false, _aiBusy = false;
   bool get _supported => defaultTargetPlatform == TargetPlatform.iOS;
 
   @override
@@ -167,9 +169,30 @@ class _WatchfacePageState extends State<WatchfacePage> {
     }
   }
 
+  Future<void> _selectTab(int value) async {
+    if (_tab == 2 && _supported) {
+      setState(() => _busy = true);
+      try {
+        await _sdk.stopAiWatchface();
+      } catch (error) {
+        if (mounted)
+          setState(() {
+            _logs.add(_error(error));
+            _busy = false;
+          });
+        return;
+      }
+    }
+    if (mounted)
+      setState(() {
+        _tab = value;
+        _busy = false;
+      });
+  }
+
   @override
   Widget build(BuildContext context) => PopScope(
-    canPop: !_busy && !_customBusy,
+    canPop: !_busy && !_customBusy && !_aiBusy,
     child: Scaffold(
       appBar: AppBar(title: Text(widget.jieli ? '表盘（杰里）' : '表盘（思澈）')),
       body: SafeArea(
@@ -177,27 +200,33 @@ class _WatchfacePageState extends State<WatchfacePage> {
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: SegmentedButton<bool>(
+              child: SegmentedButton<int>(
                 segments: const [
-                  ButtonSegment(value: true, label: Text('自定义')),
-                  ButtonSegment(value: false, label: Text('在线')),
+                  ButtonSegment(value: 1, label: Text('自定义')),
+                  ButtonSegment(value: 0, label: Text('在线')),
+                  ButtonSegment(value: 2, label: Text('AI')),
                 ],
-                selected: {_custom},
-                onSelectionChanged: _busy || _customBusy
+                selected: {_tab},
+                onSelectionChanged: _busy || _customBusy || _aiBusy
                     ? null
-                    : (values) => setState(() => _custom = values.single),
+                    : (values) => _selectTab(values.single),
               ),
             ),
             Expanded(
               child: IndexedStack(
-                index: _custom ? 1 : 0,
+                index: _tab,
                 children: [
                   _onlineBody(context),
                   CustomWatchfaceEditor(
                     jieli: widget.jieli,
-                    active: _custom,
+                    active: _tab == 1,
                     onBusyChanged: (value) =>
                         setState(() => _customBusy = value),
+                  ),
+                  AiWatchfaceEditor(
+                    active: _tab == 2,
+                    jieli: widget.jieli,
+                    onBusyChanged: (value) => setState(() => _aiBusy = value),
                   ),
                 ],
               ),

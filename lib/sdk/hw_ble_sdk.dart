@@ -186,6 +186,15 @@ class HwBleSdk {
           .receiveBroadcastStream()
           .map((event) => Map<String, dynamic>.from(event as Map));
 
+  Future<void> startAiWatchface(Map<String, dynamic> config) =>
+      _method.invokeMethod<void>('startAiWatchface', config);
+  Future<void> stopAiWatchface() =>
+      _method.invokeMethod<void>('stopAiWatchface');
+  Stream<Map<String, dynamic>> aiWatchfaceEvents() =>
+      const EventChannel('sdkdemo/hw_ble/aiWatchface')
+          .receiveBroadcastStream()
+          .map((event) => Map<String, dynamic>.from(event as Map));
+
   Future<void> init({int maxMtu = 247}) async {
     await _method.invokeMethod<void>('init', {'maxMtu': maxMtu});
   }
