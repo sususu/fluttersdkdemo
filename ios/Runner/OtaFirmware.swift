@@ -89,6 +89,18 @@ enum FirmwareVersionUtils {
 }
 
 enum OtaFirmware {
+    // Keep the server order and raw bytes, including headers inside each fragment.
+    static func jieliBin(files: [URL]) throws -> Data {
+        guard !files.isEmpty else { throw otaError("没有杰里固件文件") }
+        var aggregate = Data()
+        for file in files {
+            let bytes = try Data(contentsOf: file, options: .mappedIfSafe)
+            guard !bytes.isEmpty else { throw otaError("杰里固件文件为空") }
+            aggregate.append(bytes)
+        }
+        return aggregate
+    }
+
     static func parseUpgradeResponse(_ json: String) throws -> OtaUpgradeInfo {
         guard let data = json.data(using: .utf8),
               let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {

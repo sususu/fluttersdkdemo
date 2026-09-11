@@ -189,6 +189,19 @@ class _HomePageState extends State<HomePage> {
     _log('已停止自动重连');
   }
 
+  Future<void> _openOta({bool jieli = false}) async {
+    _otaPageOpen = true;
+    _reconnectTimer?.cancel();
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(builder: (_) => OtaUpgradePage(jieli: jieli)),
+      );
+    } finally {
+      _otaPageOpen = false;
+      if (mounted) _scheduleReconnect();
+    }
+  }
+
   void _scheduleReconnect({Duration delay = const Duration(seconds: 2)}) {
     if (_otaPageOpen || !_bound || _manualDisconnect || _device == null) return;
     _reconnectTimer?.cancel();
@@ -713,22 +726,14 @@ class _HomePageState extends State<HomePage> {
                     action(
                       'OTA 升级',
                       Icons.system_update_alt,
+                      _busy || _reconnecting ? null : () => _openOta(),
+                    ),
+                    action(
+                      '杰里 OTA',
+                      Icons.system_update_alt,
                       _busy || _reconnecting
                           ? null
-                          : () async {
-                              _otaPageOpen = true;
-                              _reconnectTimer?.cancel();
-                              try {
-                                await Navigator.of(context).push<void>(
-                                  MaterialPageRoute(
-                                    builder: (_) => const OtaUpgradePage(),
-                                  ),
-                                );
-                              } finally {
-                                _otaPageOpen = false;
-                                if (mounted) _scheduleReconnect();
-                              }
-                            },
+                          : () => _openOta(jieli: true),
                     ),
                     action(
                       'AGPS 更新',

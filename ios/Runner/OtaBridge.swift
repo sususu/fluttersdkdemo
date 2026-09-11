@@ -18,6 +18,7 @@ final class OtaBridge: NSObject, FlutterStreamHandler {
   private var observation: NSKeyValueObservation?
   private var root: URL?
   private var target = ""
+  private var jieli = false
   private var device: [String: Any] = [:]
   private var upgrade: OtaUpgradeInfo?
   private var callbacks: OtaCallbacks?
@@ -47,13 +48,14 @@ final class OtaBridge: NSObject, FlutterStreamHandler {
     guard !busy, sdk.connected(), let uuid = sdk.connectedDevice()?.peripheral?.identifier.uuidString else {
       result(FlutterError(code: "OTA_UNAVAILABLE", message: "请连接手表并等待当前操作完成", details: nil)); return
     }
+    let requestedJieli = (call.arguments as? [String: Any])?["jieli"] as? Bool ?? false
     let id = UUID()
     session = id; self.result = result
     DispatchQueue.main.asyncAfter(deadline: .now() + 35) {
       if self.session == id, self.root == nil, self.task == nil { self.fail(id, otaError("设备响应超时")) }
     }
     if call.method == "startOta" {
-      guard uuid == target, let info = upgrade else { fail(id, otaError("请先检查更新")); return }
+      guard uuid == target, requestedJieli == jieli, let info = upgrade else { fail(id, otaError("请先检查更新")); return }
       idleTimerWasDisabled = UIApplication.shared.isIdleTimerDisabled
       UIApplication.shared.isIdleTimerDisabled = true
       emit("preparing", message: "正在检查电量…")
@@ -62,6 +64,11 @@ final class OtaBridge: NSObject, FlutterStreamHandler {
           guard self.session == id else { return }
           if let error = error { self.fail(id, error); return }
           guard battery >= 30 else { self.fail(id, otaError("电量不足 30%，请先充电")); return }
+          if self.jieli {
+            // The native Jieli screen uses OTA V2's own readiness handshake.
+            self.prepareJieli(info, id: id)
+            return
+          }
           self.sdk.getDeviceUpgradeStatus { status, error in
             DispatchQueue.main.async {
               guard self.session == id else { return }
@@ -73,6 +80,7 @@ final class OtaBridge: NSObject, FlutterStreamHandler {
         }
       }
     } else {
+      jieli = requestedJieli
       target = uuid; upgrade = nil; device = [:]
       readDevice(id: id, check: call.method == "checkOta")
     }
@@ -168,14 +176,72 @@ final class OtaBridge: NSObject, FlutterStreamHandler {
       }
     }
     task = download
-    observation = download.progress.observe(\.fractionCompleted, options: [.new]) { progress, _ in
+    observation = download.progress.observe(\.fractionCompleted, options: [.new]) { [weak download] progress, _ in
       let fraction = progress.fractionCompleted
       DispatchQueue.main.async {
-        guard self.session == id else { return }
+        guard self.session == id, let download = download, self.task === download else { return }
         self.emit("downloading", base + min(1, max(0, fraction)) * span, message: "正在下载固件…")
       }
     }
     download.resume()
+  }
+
+  private func prepareJieli(_ info: OtaUpgradeInfo, id: UUID) {
+    guard connectedToTarget(), !info.firmwares.isEmpty else { fail(id, otaError("连接已断开或没有升级包")); return }
+    guard let service = sdk.otaV2Service, !service.isRunning else { fail(id, otaError("杰里 OTA 服务不可用或正在升级")); return }
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("jieli-ota-\(id.uuidString)")
+    do { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
+    catch { fail(id, error); return }
+    root = directory
+    func next(_ index: Int, files: [URL]) {
+      guard session == id else { return }
+      if index < info.firmwares.count {
+        let file = directory.appendingPathComponent("\(index).bin")
+        let span = 0.4 / Double(info.firmwares.count)
+        download(info.firmwares[index], to: file, id: id, base: Double(index) * span, span: span) {
+          next(index + 1, files: files + [file])
+        }
+        return
+      }
+      emit("preparing", 0.4, message: "正在合并固件…")
+      queue.async {
+        do {
+          let data = try OtaFirmware.jieliBin(files: files)
+          DispatchQueue.main.async {
+            guard self.session == id else { return }
+            guard self.connectedToTarget(), !service.isRunning else { self.fail(id, otaError("设备连接已变化或 OTA 正在进行")); return }
+            self.dfu = true
+            self.handingOff = true
+            self.progress = 0.4
+            self.emit("preparing", 0.4, message: "正在检查升级就绪状态…")
+            service.start(withBinData: data, readyCallback: { ok, error in
+              DispatchQueue.main.async {
+                guard self.session == id else { return }
+                if let error = error { self.fail(id, error) }
+                else if !ok { self.fail(id, otaError("杰里 OTA 准备失败")) }
+                else { self.emit("transferring", self.progress, message: "正在升级…") }
+              }
+            }, progressCallback: { value, error in
+              DispatchQueue.main.async {
+                guard self.session == id else { return }
+                if let error = error { self.fail(id, error); return }
+                guard value.isFinite else { return }
+                self.progress = max(self.progress, 0.4 + min(1, max(0, Double(value))) * 0.6)
+                self.emit("transferring", self.progress, message: "正在升级…")
+              }
+            }, finishCallback: { ok, error in
+              DispatchQueue.main.async {
+                guard self.session == id else { return }
+                if let error = error { self.fail(id, error) }
+                else if !ok { self.fail(id, otaError("杰里 OTA 升级失败")) }
+                else { self.finish(id) }
+              }
+            })
+          }
+        } catch { DispatchQueue.main.async { self.fail(id, error) } }
+      }
+    }
+    next(0, files: [])
   }
 
   private func prepare(_ info: OtaUpgradeInfo, id: UUID) {
@@ -299,7 +365,10 @@ final class OtaBridge: NSObject, FlutterStreamHandler {
     task?.cancel(); task = nil; observation = nil
     let wasDFU = dfu; dfu = false; handingOff = false
     manager.delegate = nil; callbacks = nil
-    if wasDFU { manager.stop(); upgrade = nil }
+    if wasDFU {
+      if jieli { sdk.otaV2Service?.stop() } else { manager.stop() }
+      upgrade = nil
+    }
     if let root = root {
       // Queue cleanup behind unpacking, so a cancelled package cannot leave files behind.
       queue.async { try? FileManager.default.removeItem(at: root) }

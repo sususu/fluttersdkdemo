@@ -116,17 +116,17 @@ class HwBleSdk {
   Future<void> updateAgps() => _method.invokeMethod<void>('updateAgps');
   Future<void> cancelAgpsUpdate() => _method.invokeMethod<void>('cancelAgpsUpdate');
 
-  Future<Map<String, dynamic>> refreshOtaInfo() async {
-    final data = await _method.invokeMapMethod<String, dynamic>('refreshOtaInfo');
+  Future<Map<String, dynamic>> refreshOtaInfo({bool jieli = false}) async {
+    final data = await _method.invokeMapMethod<String, dynamic>('refreshOtaInfo', jieli ? {'jieli': true} : null);
     if (data == null) throw StateError('未返回设备信息');
     return data;
   }
-  Future<Map<String, dynamic>> checkOta() async {
-    final data = await _method.invokeMapMethod<String, dynamic>('checkOta');
+  Future<Map<String, dynamic>> checkOta({bool jieli = false}) async {
+    final data = await _method.invokeMapMethod<String, dynamic>('checkOta', jieli ? {'jieli': true} : null);
     if (data == null) throw StateError('未返回升级信息');
     return data;
   }
-  Future<void> startOta() => _method.invokeMethod<void>('startOta');
+  Future<void> startOta({bool jieli = false}) => _method.invokeMethod<void>('startOta', jieli ? {'jieli': true} : null);
   Future<void> cancelOta() => _method.invokeMethod<void>('cancelOta');
   Stream<Map<String, dynamic>> otaEvents() =>
       const EventChannel('sdkdemo/hw_ble/ota').receiveBroadcastStream().map(

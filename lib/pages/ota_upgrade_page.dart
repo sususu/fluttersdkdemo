@@ -5,7 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:sdkdemo/sdk/sdk.dart';
 
 class OtaUpgradePage extends StatefulWidget {
-  const OtaUpgradePage({super.key});
+  const OtaUpgradePage({super.key, this.jieli = false});
+  final bool jieli;
   @override
   State<OtaUpgradePage> createState() => _OtaUpgradePageState();
 }
@@ -65,7 +66,9 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       _status = check ? '正在检查更新…' : '正在刷新设备信息…';
     });
     try {
-      final info = check ? await _sdk.checkOta() : await _sdk.refreshOtaInfo();
+      final info = check
+          ? await _sdk.checkOta(jieli: widget.jieli)
+          : await _sdk.refreshOtaInfo(jieli: widget.jieli);
       if (!mounted) return;
       setState(() {
         _info = info;
@@ -92,7 +95,7 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       _status = '正在准备升级…';
     });
     try {
-      await _sdk.startOta();
+      await _sdk.startOta(jieli: widget.jieli);
       if (!mounted) return;
       setState(() {
         _updating = false;
@@ -156,11 +159,15 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     return PopScope(
       canPop: !_busy,
       child: Scaffold(
-        appBar: AppBar(title: const Text('OTA 升级（思澈）')),
+        appBar: AppBar(title: Text(widget.jieli ? 'OTA 升级（杰里）' : 'OTA 升级（思澈）')),
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Text(_supported ? _status : '当前仅支持 iOS 思澈设备'),
+            Text(
+              _supported
+                  ? _status
+                  : '当前仅支持 iOS ${widget.jieli ? '杰里' : '思澈'}设备',
+            ),
             const SizedBox(height: 12),
             Text('MAC：${_info['mac'] ?? '—'}'),
             Text('当前固件：${_info['firmware'] ?? '—'}'),
